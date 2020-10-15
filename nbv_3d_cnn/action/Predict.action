@@ -1,0 +1,5 @@
+sensor_msgs/Image empty
+sensor_msgs/Image frontier  # binary images of empty and frontiers
+---
+sensor_msgs/Image scores    # float image 32FC1
+---
