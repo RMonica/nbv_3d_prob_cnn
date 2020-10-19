@@ -1,0 +1,24 @@
+<launch>
+  <!--launch-prefix="gdb -ex run - -args" -->
+
+  <node name="generate_test_dataset" type="generate_test_dataset" pkg="nbv_3d_cnn" output="screen" clear_params="true" >
+    <param name="source_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/inria_dataset/AerialImageDataset/train/gt/" />
+    <param name="dest_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/inria_environments/" />
+    <param name="source_image_suffix" type="string" value=".tif" />
+
+    <!--<param name="sub_image_width" type="int" value="256" />-->
+    <param name="environment_resize" type="string" value="4 4" />
+
+    <param name="sensor_range_voxels" type="double" value="128" />
+
+    <param name="view_cube_resolution" type="int" value="16" />
+
+    <param name="sensor_focal_length" type="double" value="450" /> <!-- FOV ~ 60 deg -->
+
+    <param name="num_view_poses_min" type="int" value="200" />
+    <param name="num_view_poses_max" type="int" value="400" />
+
+    <param name="prefix_list" type="string" value="austin chicago kitsap tyrol-w vienna" />
+  </node>
+
+</launch>

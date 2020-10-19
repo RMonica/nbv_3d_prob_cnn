@@ -1,0 +1,22 @@
+<launch>
+  <!--launch-prefix="gdb -ex run - -args" -->
+
+  <node name="augment_test_dataset" type="augment_test_dataset" pkg="nbv_3d_cnn" output="screen" clear_params="true" >
+    <param name="source_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/environments_3d/" />
+
+    <param name="dest_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/environments_3d/" />
+
+    <param name="sensor_range_voxels" type="double" value="24" />
+
+    <param name="sensor_resolution_y" type="int" value="24" />
+    <param name="sensor_resolution_x" type="int" value="32" />
+    <param name="sensor_focal_length" type="double" value="28" /> <!-- FOV ~ 60 deg -->
+
+    <param name="view_cube_resolution" type="int" value="16" />
+    <!--<param name="view_cube_resolution" type="int" value="4" />-->
+
+    <param name="mode_3d" type="string" value="3d" />
+
+  </node>
+
+</launch>

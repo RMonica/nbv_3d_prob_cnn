@@ -1,0 +1,127 @@
+<launch>
+  <!--launch-prefix="gdb -ex run - -args" -->
+
+  <node name="simulate_nbv_cycle" type="simulate_nbv_cycle" pkg="nbv_3d_cnn" output="screen" clear_params="true" >
+    <param name="image_file_name" type="string" value="$(find nbv_3d_cnn)/data/test_image/scene_180.bt" />
+    <!--<param name="image_file_name" type="string" value="$(find nbv_3d_cnn)/data/test_image/austin1.png" />-->
+    <param name="debug_output_folder" type="string" value="$(find nbv_3d_cnn)/data/simulate_nbv_cycle_3d/" />
+
+    <param name="random_seed" type="int" value="0" />
+
+    <param name="accuracy_skip_voxels" type="int" value="2" />
+
+    <param name="max_iterations" type="int" value="100" />
+
+    <param name="predict_action_name" type="string" value="/nbv_3d_cnn_predict/predict3d" />
+    <param name="predict_quat_action_name" type="string" value="/nbv_3d_cnn_predict_quat/predict3d" />
+    <param name="predict_autocomplete_action_name" type="string" value="/nbv_3d_cnn_predict_autocomplete/predict3d" />
+    <param name="predict_flat_action_name" type="string" value="/nbv_3d_cnn_predict_flat/predict3d" />
+
+    <param name="save_images" type="bool" value="false" />
+
+    <!--
+    <param name="nbv_algorithm" type="string" value="Random" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/random_nbv_log_3d.txt" />
+    -->
+    
+    <!--
+    <param name="nbv_algorithm" type="string" value="CNNDirectional" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/cnn_ov_nbv_log_3d.txt" />
+    -->
+
+    <!--
+    <param name="nbv_algorithm" type="string" value="CNNFlat" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/cnn_ov_flat_nbv_log_3d.txt" />
+    -->
+
+    
+    <param name="nbv_algorithm" type="string" value="CNNQuat" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/cnn_sa_nbv_log_3d.txt" />
+    
+
+    <!--
+    <param name="nbv_algorithm" type="string" value="InformationGain" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/ig_nbv_log_3d.txt" />
+    -->
+
+    <!--
+    <param name="nbv_algorithm" type="string" value="InformationGainProb" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/ig_nbv_log_prob_3d.txt" />
+    -->
+
+    <!--
+    <param name="nbv_algorithm" type="string" value="AutocompleteIGain" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/ig_nbv_log_autocomplete_3d.txt" />
+    -->
+ 
+    <!--
+    <param name="nbv_algorithm" type="string" value="OmniscientGain" />
+    <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs_3d/omni_nbv_log_3d.txt" />
+    -->
+
+    <param name="igain_min_range" type="double" value="5.0" />
+
+    <param name="sensor_focal_length" type="double" value="28" />
+
+    <param name="sensor_range_voxels" type="double" value="24" />
+
+    <param name="sensor_resolution_y" type="int" value="24" />
+    <param name="sensor_resolution_x" type="int" value="32" />
+    <param name="sensor_focal_length" type="double" value="28" />
+
+    <param name="view_cube_resolution" type="int" value="16" />
+
+    <param name="a_priori_occupied_prob" type="double" value="0.15" />
+
+    <param name="mode_3d" type="string" value="3d" />
+  </node>
+
+  <node name="nbv_3d_cnn_predict" type="nbv_3d_cnn_predict.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <!--<param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)data/trained_models/final.chkpt" />-->
+    <param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)/data/trained_models/_3d_final.chkpt" />
+
+    <param name="sub_image_expand_pow" type="int" value="2" />
+
+    <param name="model_type" type="string" value="" />
+
+    <param name="action_name" type="string" value="~predict3d" />
+    <param name="is_3d" type="bool" value="true" />
+    <param name="sensor_range_voxels" type="double" value="24" />
+  </node>
+
+  <node name="nbv_3d_cnn_predict_flat" type="nbv_3d_cnn_predict.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)/data/trained_models/flat_3d_final.chkpt" />
+
+    <param name="sub_image_expand_pow" type="int" value="0" />
+
+    <param name="model_type" type="string" value="flat" />
+
+    <param name="action_name" type="string" value="~predict3d" />
+    <param name="is_3d" type="bool" value="true" />
+    <param name="sensor_range_voxels" type="double" value="24" />
+  </node>
+
+  <node name="nbv_3d_cnn_predict_quat" type="nbv_3d_cnn_predict.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)/data/trained_models/scoreangle_3d_epoch_20.chkpt" />
+
+    <param name="sub_image_expand_pow" type="int" value="0" />
+    
+    <param name="model_type" type="string" value="quat" />
+
+    <param name="action_name" type="string" value="~predict3d" />
+    <param name="is_3d" type="bool" value="true" />
+    <param name="sensor_range_voxels" type="double" value="24" />
+  </node>
+
+  <node name="nbv_3d_cnn_predict_autocomplete" type="nbv_3d_cnn_predict.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)/data/trained_models/autocomplete_3d_epoch_20.chkpt" />
+
+    <param name="sub_image_expand_pow" type="int" value="0" />
+    
+    <param name="model_type" type="string" value="autocomplete" />
+
+    <param name="action_name" type="string" value="~predict3d" />
+    <param name="is_3d" type="bool" value="true" />
+    <param name="sensor_range_voxels" type="double" value="24" />
+  </node>
+</launch>

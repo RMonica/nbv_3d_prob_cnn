@@ -1,0 +1,24 @@
+<launch>
+
+  <node name="nbv_3d_cnn_generate" type="nbv_3d_cnn_generate.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="source_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/inria_environments/" />
+    <param name="dest_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/output/" />
+
+    <param name="tensorboard_directory" type="string" value="$(find nbv_3d_cnn)/data/tensorboard/" />
+
+    <!--<param name="model_type" type="string" value="" />-->
+    <param name="model_type" type="string" value="quat" />
+    <!--<param name="model_type" type="string" value="autocomplete" />-->
+    <!--<param name="model_type" type="string" value="2" />-->
+    <!--<param name="model_type" type="string" value="flat" />-->
+
+    <!--<param name="load_checkpoint" type="string" value="_final.chkpt" />-->
+    <!--<param name="load_checkpoint" type="string" value="_epoch_40.chkpt" />-->
+  
+    <!--<param name="num_epochs" type="int" value="10" />-->
+    <param name="num_epochs" type="int" value="120" />
+
+    <param name="evaluation_only" type="bool" value="false" />
+  </node>
+
+</launch>
