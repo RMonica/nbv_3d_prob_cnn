@@ -19,10 +19,10 @@
 #include <sstream>
 
 // custom
-#include "generate_test_dataset_opencl.h"
-#include "origin_visibility.h"
-#include "generate_single_image.h"
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
+#include <nbv_3d_cnn/origin_visibility.h>
+#include <nbv_3d_cnn/generate_single_image.h>
+#include <nbv_3d_cnn/voxelgrid.h>
 
 class GenerateTestDataset
 {
@@ -49,10 +49,17 @@ public:
     m_timer = m_nh.createTimer(ros::Duration(1.0), &GenerateTestDataset::onTimer, this, true);
 
     m_nh.param<std::string>(PARAM_NAME_3D_MODE, param_string, PARAM_DEFAULT_3D_MODE);
+    m_is_3d_realistic = false;
+    m_is_3d = false;
     if (param_string == PARAM_VALUE_3D_MODE_2D)
       m_is_3d = false;
     else if (param_string == PARAM_VALUE_3D_MODE_3D)
       m_is_3d = true;
+    else if (param_string == PARAM_VALUE_3D_MODE_3D_REALISTIC)
+    {
+      m_is_3d = true;
+      m_is_3d_realistic = true;
+    }
     else
     {
       ROS_ERROR("generate_test_dataset: invalid value for %s: %s", (const char *)PARAM_NAME_3D_MODE,
@@ -62,7 +69,9 @@ public:
 
     {
       float sensor_range_voxels;
+      float sensor_min_range_voxels;
       m_nh.param<float>(PARAM_NAME_SENSOR_RANGE_VOXELS, sensor_range_voxels, PARAM_DEFAULT_SENSOR_RANGE_VOXELS);
+      m_nh.param<float>(PARAM_NAME_SENSOR_MIN_RANGE_VOXELS, sensor_min_range_voxels, PARAM_DEFAULT_SENSOR_MIN_RANGE_VOXELS);
 
       int sensor_resolution_x;
       m_nh.param<int>(PARAM_NAME_SENSOR_RESOLUTION_X, sensor_resolution_x, PARAM_DEFAULT_SENSOR_RESOLUTION_X);
@@ -80,7 +89,9 @@ public:
                       PARAM_DEFAULT_SUBMATRIX_RESOLUTION);
 
       m_generate_single_image.reset(new GenerateSingleImage(m_nh, m_opencl, m_is_3d,
-                                                            sensor_range_voxels, sensor_resolution_x,
+                                                            sensor_range_voxels,
+                                                            sensor_min_range_voxels,
+                                                            sensor_resolution_x,
                                                             sensor_resolution_y,
                                                             sensor_focal_length, view_cube_resolution,
                                                             submatrix_resolution));
@@ -98,6 +109,9 @@ public:
     m_nh.param<int>(PARAM_NAME_NUM_VIEW_POSES_MIN, param_int, PARAM_DEFAULT_NUM_VIEW_POSES_MIN);
     m_num_view_poses_min = param_int;
 
+    m_nh.param<int>(PARAM_NAME_ACCURACY_SKIP_VOXELS, param_int, PARAM_DEFAULT_ACCURACY_SKIP_VOXELS);
+    m_accuracy_skip_voxels = param_int;
+
     m_nh.param<std::string>(PARAM_NAME_ENVIRONMENT_RESIZE, param_string, PARAM_DEFAULT_ENVIRONMENT_RESIZE);
     m_environment_resize = Eigen::Vector2i(0, 0);
     if (!param_string.empty())
@@ -110,6 +124,21 @@ public:
         ROS_ERROR("generate_test_dataset: could not parse resize string \"%s\", ignoring resize.",
                   param_string.c_str());
         m_environment_resize = Eigen::Vector2i(0, 0);
+      }
+    }
+
+    m_nh.param<std::string>(PARAM_NAME_REALISTIC_ENVIRONMENT_SIZE, param_string, PARAM_DEFAULT_REALISTIC_ENVIRONMENT_SIZE);
+    m_realistic_environment_size = Eigen::Vector3i::Zero();
+    if (!param_string.empty())
+    {
+      std::istringstream istr(param_string);
+      istr >> m_realistic_environment_size.x();
+      istr >> m_realistic_environment_size.y();
+      istr >> m_realistic_environment_size.z();
+      if (!istr || (m_realistic_environment_size.array() <= 0).any())
+      {
+        ROS_FATAL("generate_test_dataset: could not parse env size string \"%s\".",
+                  param_string.c_str());
       }
     }
 
@@ -227,7 +256,12 @@ public:
     if (!m_is_3d)
       environment = Voxelgrid::Load2DOpenCV(filename);
     else
-      environment = Voxelgrid::Load3DOctomap(filename);
+    {
+      if (!m_is_3d_realistic)
+        environment = Voxelgrid::Load3DOctomap(filename);
+      else
+        environment = Voxelgrid::Load3DOctomapWithISize(filename, m_realistic_environment_size);
+    }
 
     return environment;
   }
@@ -321,6 +355,7 @@ public:
     }
 
     m_generate_single_image->Run(*environment, origins, orientations,
+                                 m_accuracy_skip_voxels,
                                  cumulative_empty_observation, cumulative_occupied_observation,
                                  cumulative_frontier_observation, view_cube_evaluation,
                                  directional_view_cube_evaluation,
@@ -343,9 +378,11 @@ public:
 
     ROS_INFO("generate_test_dataset: saving files to folder %s", m_dest_images_prefix.c_str());
 
+    const float resolution = 0.0058 * 2.0;
+
     std::string environment_filename = m_dest_images_prefix +
         std::to_string(m_image_counter) + "_environment";
-    environment->Save2D3D(environment_filename, m_is_3d);
+    environment->Save2D3DR(environment_filename, m_is_3d, resolution);
 
     std::string gt_filename = m_dest_images_prefix +
         std::to_string(m_image_counter) + "_gt";
@@ -393,6 +430,7 @@ private:
   StringVector m_prefixes;
 
   bool m_is_3d;
+  bool m_is_3d_realistic;
 
   ros::NodeHandle & m_nh;
 
@@ -403,6 +441,10 @@ private:
   Eigen::Vector2i m_environment_resize;
   uint64 m_num_view_poses_min;
   uint64 m_num_view_poses_max;
+
+  uint64 m_accuracy_skip_voxels;
+
+  Eigen::Vector3i m_realistic_environment_size;
 
   ros::Publisher m_debug_environment_pub;
   ros::Publisher m_debug_empty_observed_pub;

@@ -13,6 +13,15 @@
 #define PARAM_NAME_EMPTY_VOXELGRID_NAME          "empty_voxelgrid_name"
 #define PARAM_DEFAULT_EMPTY_VOXELGRID_NAME       ""
 
+#define PARAM_NAME_USE_SEQUENCE_COUNTER          "use_sequence_counter"
+#define PARAM_DEFAULT_USE_SEQUENCE_COUNTER       (bool(true))
+
+#define PARAM_NAME_VOXELGRID_SIZE                "voxelgrid_size"
+#define PARAM_DEFAULT_VOXELGRID_SIZE             "" // x y z (voxels)
+
+#define PARAM_NAME_OCCUPANCY_TH                  "occupancy_th"
+#define PARAM_DEFAULT_OCCUPANCY_TH               (float(0.5))
+
 #define PARAM_NAME_EMPTY_VOXELGRID_SUFFIX        "empty_voxelgrid_suffix"
 #define PARAM_DEFAULT_EMPTY_VOXELGRID_SUFFIX     ""
 
@@ -21,6 +30,12 @@
 
 #define PARAM_NAME_MARKER_OUT_TOPIC    "marker_out_topic"
 #define PARAM_DEFAULT_MARKER_OUT_TOPIC "marker"
+
+#define PARAM_NAME_CLOUD_OUT_TOPIC    "cloud_out_topic"
+#define PARAM_DEFAULT_CLOUD_OUT_TOPIC "cloud"
+
+#define PARAM_NAME_USE_RAINBOW        "use_rainbow"
+#define PARAM_DEFAULT_USE_RAINBOW     (bool(false))
 
 #define PARAM_NAME_SEQUENCE_MODE      "sequence_mode"
 #define PARAM_VALUE_SEQUENCE_ONE_SHOT "one_shot"

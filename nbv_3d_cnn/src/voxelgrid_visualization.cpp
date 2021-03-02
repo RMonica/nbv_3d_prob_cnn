@@ -9,13 +9,18 @@
 #include <ros/ros.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <eigen_conversions/eigen_msg.h>
+#include <pcl_conversions/pcl_conversions.h>
 
 #include <Eigen/Dense>
 #include <Eigen/StdVector>
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/point_types_conversion.h>
 
+#include <nbv_3d_cnn/voxelgrid.h>
 
-#include "voxelgrid.h"
+#define FRAME_ID "map"
 
 class VoxelgridVisualization
 {
@@ -24,6 +29,7 @@ class VoxelgridVisualization
 
   typedef std::vector<Voxelgrid::ConstPtr> VoxelgridConstPtrVector;
   typedef std::vector<std_msgs::ColorRGBA> ColorRGBAVector;
+  typedef pcl::PointCloud<pcl::PointXYZRGBA> PointXYZRGBACloud;
 
   enum class SequenceMode
   {
@@ -34,6 +40,7 @@ class VoxelgridVisualization
   VoxelgridVisualization(ros::NodeHandle & nh): m_nh(nh)
   {
     std::string param_string;
+    double param_double;
 
     m_nh.param<std::string>(PARAM_NAME_OCTOMAP_NAME, m_filename, PARAM_DEFAULT_OCTOMAP_NAME);
 
@@ -78,7 +85,34 @@ class VoxelgridVisualization
     m_nh.param<std::string>(PARAM_NAME_MARKER_OUT_TOPIC, param_string, PARAM_DEFAULT_MARKER_OUT_TOPIC);
     m_marker_publisher = m_nh.advertise<visualization_msgs::MarkerArray>(param_string, 1);
 
+    m_nh.param<std::string>(PARAM_NAME_CLOUD_OUT_TOPIC, param_string, PARAM_DEFAULT_CLOUD_OUT_TOPIC);
+    m_cloud_publisher = m_nh.advertise<sensor_msgs::PointCloud2>(param_string, 1);
+
     m_nh.param<std::string>(PARAM_NAME_NAMESPACE, m_namespace, PARAM_DEFAULT_NAMESPACE);
+
+    m_nh.param<bool>(PARAM_NAME_USE_SEQUENCE_COUNTER, m_use_sequence_counter, PARAM_DEFAULT_USE_SEQUENCE_COUNTER);
+
+    m_nh.param<bool>(PARAM_NAME_USE_RAINBOW, m_use_rainbow, PARAM_DEFAULT_USE_RAINBOW);
+
+    m_nh.param<double>(PARAM_NAME_OCCUPANCY_TH, param_double, PARAM_DEFAULT_OCCUPANCY_TH);
+    m_occupancy_th = param_double;
+
+    m_nh.param<std::string>(PARAM_NAME_VOXELGRID_SIZE, param_string, PARAM_DEFAULT_VOXELGRID_SIZE);
+    m_has_voxelgrid_size = false;
+    if (param_string != "")
+    {
+      std::istringstream istr(param_string);
+      istr >> m_voxelgrid_size.x() >> m_voxelgrid_size.y() >> m_voxelgrid_size.z();
+      if (!istr)
+      {
+        ROS_ERROR("voxelgrid_visualization: could not parse voxelgrid size string %s", param_string.c_str());
+      }
+      else
+      {
+        m_has_voxelgrid_size = true;
+        ROS_INFO_STREAM("voxelgrid_visualization: voxelgrid size is " << m_voxelgrid_size.transpose());
+      }
+    }
 
     m_sequence_counter = 0;
 
@@ -91,11 +125,76 @@ class VoxelgridVisualization
   visualization_msgs::Marker GetDeleteAllMarker(const std::string ns)
   {
     visualization_msgs::Marker marker;
-    marker.header.frame_id = "map";
+    marker.header.frame_id = FRAME_ID;
     marker.action = marker.DELETEALL;
     marker.id = 0;
     marker.ns = ns;
     return marker;
+  }
+
+  PointXYZRGBACloud VoxelGridToCloud(const Voxelgrid::ConstPtr vgp, const std_msgs::ColorRGBA & color_in)
+  {
+    ROS_INFO("voxelgrid_visualization: building cloud.");
+
+    const Voxelgrid & vg = *vgp;
+
+    const uint64 depth = vg.GetDepth();
+    const uint64 height = vg.GetHeight();
+    const uint64 width = vg.GetWidth();
+
+    PointXYZRGBACloud cloud;
+
+    std_msgs::ColorRGBA color = color_in;
+    color.a = 1.0f;
+
+    const float SCALE = 0.1;
+
+    for (uint64 z = 0; z < depth; z++)
+      for (uint64 y = 0; y < height; y++)
+        for (uint64 x = 0; x < width; x++)
+        {
+          const Eigen::Vector3f gpt(x - width/2.0f, y - height/2.0f, z - depth/2.0f);
+          const Eigen::Vector3f pt = gpt * SCALE;
+
+          pcl::PointXYZRGBA ppt;
+          ppt.x = pt.x();
+          ppt.y = pt.y();
+          ppt.z = pt.z();
+          ppt.r = std::round(color.r * 255.0f);
+          ppt.g = std::round(color.g * 255.0f);
+          ppt.b = std::round(color.b * 255.0f);
+          ppt.a = std::round(color.a * 255.0f);
+
+          const float v = vg.at(x, y, z);
+
+          if (v < m_occupancy_th)
+            continue;
+
+          cloud.push_back(ppt);
+        }
+
+    cloud.is_dense = true;
+    cloud.height = 1;
+    cloud.width = cloud.size();
+
+    return cloud;
+  }
+
+  Eigen::Vector3i Rainbow(double ratio)
+  {
+    pcl::PointXYZRGB rgb;
+    pcl::PointXYZHSV hsv;
+    hsv.h = std::min<double>(ratio * 360.0, 359.0);
+    hsv.s = 1.0;
+    hsv.v = 1.0;
+
+    pcl::PointXYZHSVtoXYZRGB(hsv, rgb);
+
+    Eigen::Vector3i rgb_v;
+    rgb_v.x() = rgb.r;
+    rgb_v.y() = rgb.g;
+    rgb_v.z() = rgb.b;
+    return rgb_v;
   }
 
   visualization_msgs::Marker VoxelGridToMsg(const uint64 id, const Voxelgrid::ConstPtr vgp, const std_msgs::ColorRGBA & color_in)
@@ -123,6 +222,19 @@ class VoxelgridVisualization
 
     const float SCALE = 0.1;
 
+    Eigen::Vector3i maxes(Eigen::Vector3i::Zero());
+    Eigen::Vector3i mines(Eigen::Vector3i(width, height, depth));
+    for (uint64 z = 0; z < depth; z++)
+      for (uint64 y = 0; y < height; y++)
+        for (uint64 x = 0; x < width; x++)
+        {
+          const float v = vg.at(x, y, z);
+          if (v < m_occupancy_th)
+            continue;
+          maxes = maxes.array().max(Eigen::Vector3i(x, y, z).array());
+          mines = mines.array().min(Eigen::Vector3i(x, y, z).array());
+        }
+
     for (uint64 z = 0; z < depth; z++)
       for (uint64 y = 0; y < height; y++)
         for (uint64 x = 0; x < width; x++)
@@ -136,7 +248,7 @@ class VoxelgridVisualization
 
           const float v = vg.at(x, y, z);
 
-          if (v < 0.5)
+          if (v < m_occupancy_th)
             continue;
 
           geometry_msgs::Point msg_pt;
@@ -144,6 +256,14 @@ class VoxelgridVisualization
           msg_pt.y = pt.y();
           msg_pt.z = pt.z();
           cubes_marker.points.push_back(msg_pt);
+
+          if (m_use_rainbow)
+          {
+            const Eigen::Vector3i rainbow = Rainbow(float(z - mines.z()) / (maxes.z() - mines.z()));
+            color.r = rainbow.x() / 255.0f;
+            color.g = rainbow.y() / 255.0f;
+            color.b = rainbow.z() / 255.0f;
+          }
 
           cubes_marker.colors.push_back(color);
         }
@@ -171,19 +291,27 @@ class VoxelgridVisualization
     markers.markers.push_back(GetDeleteAllMarker(m_namespace));
     uint64 color_counter = 0;
 
+    PointXYZRGBACloud cloud;
+
     Voxelgrid::ConstPtr vg;
-    std_msgs::ColorRGBA vg_color = m_colors[color_counter++];
+    std_msgs::ColorRGBA vg_color;
     if (!m_filename.empty())
     {
-      vg = Voxelgrid::Load3DOctomap(m_filename);
+      vg_color = m_colors[color_counter++];
+      if (m_has_voxelgrid_size)
+        vg = Voxelgrid::Load3DOctomapWithISize(m_filename, m_voxelgrid_size);
+      else
+        vg = Voxelgrid::Load3DOctomap(m_filename);
       if (!vg)
         m_terminated = true;
     }
 
+    const std::string sequence_counter_string = m_use_sequence_counter ? std::to_string(m_sequence_counter) : std::string();
+
     if (!m_voxelgrid_occupied_filename.empty() || !m_voxelgrid_occupied_suffix.empty())
     {
       const std::string occupied_filename = m_voxelgrid_filename_prefix + m_voxelgrid_occupied_filename +
-                                            std::to_string(m_sequence_counter) + m_voxelgrid_occupied_suffix;
+                                            sequence_counter_string + m_voxelgrid_occupied_suffix;
 
       const Voxelgrid::ConstPtr vg_occupied = Voxelgrid::FromFileBinary(occupied_filename);
 
@@ -191,12 +319,16 @@ class VoxelgridVisualization
         m_terminated = true;
 
       if (!m_terminated)
-        markers.markers.push_back(VoxelGridToMsg(1, vg_occupied, m_colors[color_counter++]));
+      {
+        markers.markers.push_back(VoxelGridToMsg(1, vg_occupied, m_colors[color_counter]));
+        cloud += VoxelGridToCloud(vg_occupied, m_colors[color_counter]);
+        color_counter++;
+      }
 
       if (!m_voxelgrid_empty_filename.empty() || !m_voxelgrid_empty_suffix.empty())
       {
         const std::string empty_filename = m_voxelgrid_filename_prefix + m_voxelgrid_empty_filename +
-                                           std::to_string(m_sequence_counter) + m_voxelgrid_empty_suffix;
+                                           sequence_counter_string + m_voxelgrid_empty_suffix;
         const Voxelgrid::ConstPtr vg_empty = Voxelgrid::FromFileBinary(empty_filename);
         if (vg_empty)
         {
@@ -206,16 +338,30 @@ class VoxelgridVisualization
             vg_unknown = vg_unknown->AndNot(*vg);
             vg = vg->AndNot(*vg_occupied);
           }
-          markers.markers.push_back(VoxelGridToMsg(2, vg_unknown, m_colors[color_counter++]));
+          markers.markers.push_back(VoxelGridToMsg(2, vg_unknown, m_colors[color_counter]));
+          cloud += VoxelGridToCloud(vg_unknown, m_colors[color_counter]);
+          color_counter++;
         }
       }
     }
 
     if (vg)
+    {
       markers.markers.push_back(VoxelGridToMsg(0, vg, vg_color));
+      cloud += VoxelGridToCloud(vg, vg_color);
+    }
+
+    ROS_INFO("voxelgrid_visualization: publishing.");
 
     if (!m_terminated)
+    {
       m_marker_publisher.publish(markers);
+
+      sensor_msgs::PointCloud2 cloud_msg;
+      pcl::toROSMsg(cloud, cloud_msg);
+      cloud_msg.header.frame_id = FRAME_ID;
+      m_cloud_publisher.publish(cloud_msg);
+    }
 
     if (m_terminated)
     {
@@ -225,11 +371,14 @@ class VoxelgridVisualization
     }
   }
 
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+
   private:
   ros::NodeHandle & m_nh;
 
   ros::Timer m_timer;
   ros::Publisher m_marker_publisher;
+  ros::Publisher m_cloud_publisher;
 
   std::string m_filename;
 
@@ -244,11 +393,19 @@ class VoxelgridVisualization
 
   bool m_terminated;
 
+  bool m_use_sequence_counter;
+  float m_occupancy_th;
+
   ColorRGBAVector m_colors;
   std::string m_namespace;
 
   SequenceMode m_sequence_mode;
   uint64 m_sequence_counter;
+
+  bool m_has_voxelgrid_size;
+  Eigen::Vector3i m_voxelgrid_size;
+
+  bool m_use_rainbow;
 };
 
 int main(int argc, char ** argv)

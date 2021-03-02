@@ -1,9 +1,11 @@
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/voxelgrid.h>
 
 #include <octomap/octomap.h>
 #include <octomap/OcTree.h>
 
 #include <sstream>
+
+#define MAGIC_TERNARY_BINARY "VXGT"
 
 Voxelgrid::Voxelgrid(const uint64 width, const uint64 height, const uint64 depth)
 {
@@ -19,7 +21,7 @@ Voxelgrid::Voxelgrid(const Eigen::Vector3i & size):
 
 Voxelgrid::Ptr Voxelgrid::Load2DOpenCV(const std::string & filename)
 {
-  cv::Mat image = cv::imread(filename, CV_LOAD_IMAGE_GRAYSCALE);
+  cv::Mat image = cv::imread(filename, cv::IMREAD_GRAYSCALE);
 
   if (!image.data)
   {
@@ -60,6 +62,35 @@ Voxelgrid::Ptr Voxelgrid::FromOpenCVImage2DFloat(const cv::Mat & image)
   return result;
 }
 
+std::shared_ptr<octomap::OcTree> Voxelgrid::ToOctomapOctree(const float resolution) const
+{
+  std::shared_ptr<octomap::OcTree> result(new octomap::OcTree(resolution));
+
+  Eigen::Vector3i i;
+  for (i.z() = 0; i.z() < m_depth; i.z()++)
+    for (i.y() = 0; i.y() < m_height; i.y()++)
+      for (i.x() = 0; i.x() < m_width; i.x()++)
+      {
+        const Eigen::Vector3f ecoords = (i.cast<float>() + 0.5f * Eigen::Vector3f::Ones()) * resolution -
+                                         0.5f * Eigen::Vector3f::Ones();
+        const float value = at(i);
+
+        if (value < 0.0001f)
+          continue; // almost zero
+
+        const octomap::point3d new_point(ecoords.x(), ecoords.y(), ecoords.z());
+        octomap::OcTreeNode * scene_node = result->search(new_point);
+        if (!scene_node)
+          scene_node = result->updateNode(new_point, true);
+        if (value > 0.5f)
+          scene_node->setLogOdds(octomap::logodds(0.99));
+        else
+          scene_node->setLogOdds(octomap::logodds(0.01f));
+      }
+
+  return result;
+}
+
 std::shared_ptr<octomap::OcTree> Voxelgrid::ToOctomapOctree() const
 {
   const uint64 max_coord = std::max(std::max(m_depth, m_height), m_width);
@@ -87,6 +118,33 @@ std::shared_ptr<octomap::OcTree> Voxelgrid::ToOctomapOctree() const
           scene_node->setLogOdds(octomap::logodds(0.99));
         else
           scene_node->setLogOdds(octomap::logodds(0.01f));
+      }
+
+  return result;
+}
+
+Voxelgrid::Ptr Voxelgrid::FromOctomapOctree(octomap::OcTree & octree,
+                                            const Eigen::Vector3i & bbx_isize)
+{
+  octree.expand();
+  const float resolution = octree.getResolution();
+
+  const Eigen::Vector3f e_bbx_min = -resolution * bbx_isize.cast<float>() / 2.0f;
+
+  Voxelgrid::Ptr result(new Voxelgrid(bbx_isize.x(), bbx_isize.y(), bbx_isize.z()));
+
+  for (uint64 z = 0; z < bbx_isize.z(); z++)
+    for (uint64 y = 0; y < bbx_isize.y(); y++)
+      for (uint64 x = 0; x < bbx_isize.x(); x++)
+      {
+        result->at(x, y, z) = 0.0f;
+
+        const Eigen::Vector3f new_epoint = (Eigen::Vector3i(x, y, z).cast<float>() +
+                                            0.5f * Eigen::Vector3f::Ones()) * resolution + e_bbx_min;
+        const octomap::point3d new_point(new_epoint.x(), new_epoint.y(), new_epoint.z());
+        octomap::OcTreeNode * node = octree.search(new_point);
+        if (node)
+          result->at(x, y, z) = (node->getOccupancy() > 0.5f ? 1.0f : 0.0f);
       }
 
   return result;
@@ -128,6 +186,12 @@ bool Voxelgrid::SaveOctomapOctree(const std::string & filename) const
   return octree->writeBinary(filename);
 }
 
+bool Voxelgrid::SaveOctomapOctree(const std::string & filename, const float resolution) const
+{
+  std::shared_ptr<octomap::OcTree> octree = ToOctomapOctree(resolution);
+  return octree->writeBinary(filename);
+}
+
 Voxelgrid::Ptr Voxelgrid::Load3DOctomap(const std::string & filename)
 {
   octomap::OcTree octree(0.1);
@@ -138,6 +202,47 @@ Voxelgrid::Ptr Voxelgrid::Load3DOctomap(const std::string & filename)
   }
 
   return FromOctomapOctree(octree);
+}
+
+Voxelgrid::Ptr Voxelgrid::Load3DOctomapWithISize(const std::string & filename,
+                                                 const Eigen::Vector3i & isize)
+{
+  octomap::OcTree octree(0.1);
+  if (!octree.readBinary(filename))
+  {
+    ROS_ERROR("Voxelgrid: unable to load octree %s using OctoMap.", filename.c_str());
+    return Ptr();
+  }
+
+  return FromOctomapOctree(octree, isize);
+}
+
+Voxelgrid::Ptr Voxelgrid::HalveSize(const Eigen::Vector3i & iterations) const
+{
+  const Eigen::Vector3i scale(1ul << (iterations.x() - 1),
+                              1ul << (iterations.y() - 1),
+                              1ul << (iterations.z() - 1));
+  const Eigen::Vector3i my_size = GetSize();
+  const Eigen::Vector3i new_size = my_size.array() / scale.array();
+
+  Voxelgrid::Ptr result(new Voxelgrid(new_size));
+
+  Eigen::Vector3i i;
+  for (i.z() = 0; i.z() < new_size.z(); i.z()++)
+    for (i.y() = 0; i.y() < new_size.y(); i.y()++)
+      for (i.x() = 0; i.x() < new_size.x(); i.x()++)
+      {
+        const Eigen::Vector3i source_i = i.array() * scale.array();
+
+        if ((source_i.array() < 0).any())
+          continue;
+        if ((source_i.array() >= my_size.array()).any())
+          continue;
+
+        result->at(i) = at(source_i);
+      }
+
+  return result;
 }
 
 Voxelgrid::Ptr Voxelgrid::Resize(const Eigen::Vector3f & scale) const
@@ -190,6 +295,17 @@ bool Voxelgrid::Save2D3D(const std::string & filename_prefix, const bool is_3d) 
   else
   {
     return SaveOctomapOctree(filename_prefix + ".bt") &&
+           ToFileBinary(filename_prefix + ".binvoxelgrid");
+  }
+}
+
+bool Voxelgrid::Save2D3DR(const std::string & filename_prefix, const bool is_3d, const float resolution) const
+{
+  if (!is_3d)
+    return SaveOpenCVImage2D(filename_prefix + ".png");
+  else
+  {
+    return SaveOctomapOctree(filename_prefix + ".bt", resolution) &&
            ToFileBinary(filename_prefix + ".binvoxelgrid");
   }
 }
@@ -555,6 +671,87 @@ void Voxelgrid::DivideBy(const Voxelgrid & other)
   m_data = m_data.array() / other.m_data.array();
 }
 
+bool Voxelgrid::ToFileTernaryBinary(const std::string & filename) const
+{
+  std::ofstream ofile(filename, std::ios::binary);
+
+  const std::string magic = MAGIC_TERNARY_BINARY;
+
+  const uint32 version = 1;
+  const uint32 width = GetWidth();
+  const uint32 height = GetHeight();
+  const uint32 depth = GetDepth();
+
+  ofile.write(magic.c_str(), 4);
+  ofile.write((const char *)&version, sizeof(version));
+  ofile.write((const char *)&width, sizeof(width));
+  ofile.write((const char *)&height, sizeof(height));
+  ofile.write((const char *)&depth, sizeof(depth));
+
+  for (uint64 z = 0; z < depth; z++)
+    for (uint64 y = 0; y < height; y++)
+      for (uint64 x = 0; x < width; x++)
+      {
+        const float v = at(x, y, z);
+        const int8 bv = ((v > 0.5) ? 1 : ((v < -0.5) ? -1 : 0));
+        ofile.write((const char *)&bv, sizeof(bv));
+      }
+
+  if (!ofile)
+    return false;
+  return true;
+}
+
+Voxelgrid::Ptr Voxelgrid::FromFileTernaryBinary(const std::string &filename)
+{
+  std::ifstream ifile(filename, std::ios::binary);
+
+  if (!ifile)
+  {
+    ROS_ERROR("Voxelgrid::FromFileTernaryBinary: cannot open file %s", filename.c_str());
+    return Voxelgrid::Ptr();
+  }
+
+  const std::string magic = MAGIC_TERNARY_BINARY;
+
+  char maybe_magic[5];
+  ifile.read(maybe_magic, 4);
+  maybe_magic[4] = 0;
+  if (magic != maybe_magic)
+  {
+    ROS_ERROR("Voxelgrid::FromFileTernaryBinary: file must start with %s, '%s' found instead", magic.c_str(),
+              maybe_magic);
+    return Voxelgrid::Ptr();
+  }
+
+  uint32 version, width, height, depth;
+  ifile.read((char *)&version, sizeof(version));
+  ifile.read((char *)&width, sizeof(version));
+  ifile.read((char *)&height, sizeof(version));
+  ifile.read((char *)&depth, sizeof(version));
+
+  if (!ifile || version != 1)
+  {
+    ROS_ERROR("Voxelgrid::FromFileTernaryBinary: invalid version %u", unsigned(version));
+    return Voxelgrid::Ptr();
+  }
+
+  Voxelgrid::Ptr result(new Voxelgrid(width, height, depth));
+
+  for (uint64 z = 0; z < depth; z++)
+    for (uint64 y = 0; y < height; y++)
+      for (uint64 x = 0; x < width; x++)
+      {
+        int8 v;
+        ifile.read((char *)&v, sizeof(v));
+        result->at(x, y, z) = float(v);
+      }
+
+  if (!ifile)
+    return Voxelgrid::Ptr();
+  return result;
+}
+
 bool Voxelgrid::ToFileBinary(const std::string &filename) const
 {
   std::ofstream ofile(filename, std::ios::binary);
@@ -757,14 +954,14 @@ bool Voxelgrid::ToFile(const std::string & filename) const
 Voxelgrid::Ptr Voxelgrid::Transpose(const uint64 axis0, const uint64 axis1, const uint64 axis2)
 {
   const Eigen::Vector3i size = GetSize();
-  Voxelgrid::Ptr result(new Voxelgrid(size[axis2], size[axis1], size[axis0]));
+  Voxelgrid::Ptr result(new Voxelgrid(size[axis0], size[axis1], size[axis2]));
 
   for (uint64 z = 0; z < m_depth; z++)
     for (uint64 y = 0; y < m_height; y++)
       for (uint64 x = 0; x < m_width; x++)
       {
         const Eigen::Vector3i xyz(x, y, z);
-        result->at(xyz[axis2], xyz[axis1], xyz[axis0]) = at(xyz);
+        result->at(xyz[axis0], xyz[axis1], xyz[axis2]) = at(xyz);
       }
 
   return result;
@@ -804,6 +1001,21 @@ Voxelgrid::Ptr Voxelgrid::Rotate90n(const uint64 axis1, const uint64 axis2, cons
   Voxelgrid::Ptr result = Rotate90(axis1, axis2);
   for (uint64 i = 1; i < n; i++)
     result = result->Rotate90(axis1, axis2);
+
+  return result;
+}
+
+Voxelgrid::Ptr Voxelgrid::Threshold(const float th, const float value_if_above, const float value_if_below) const
+{
+  Voxelgrid::Ptr result(new Voxelgrid(GetSize()));
+
+  for (uint64 z = 0; z < m_depth; z++)
+    for (uint64 y = 0; y < m_height; y++)
+      for (uint64 x = 0; x < m_width; x++)
+      {
+        const Eigen::Vector3i xyz(x, y, z);
+        result->at(xyz) = (at(xyz) > th) ? value_if_above : value_if_below;
+      }
 
   return result;
 }

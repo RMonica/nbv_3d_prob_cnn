@@ -19,7 +19,7 @@
 #include <sstream>
 
 // custom
-#include "origin_visibility.h"
+#include <nbv_3d_cnn/origin_visibility.h>
 
 typedef uint8_t uint8;
 typedef uint64_t uint64;

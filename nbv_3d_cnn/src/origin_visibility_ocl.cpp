@@ -1,5 +1,5 @@
-#include "origin_visibility.h"
-#include "generate_test_dataset_opencl.h"
+#include <nbv_3d_cnn/origin_visibility.h>
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
 
 Eigen::Quaternionf OriginVisibility::GetBestSensorOrientationOCL(GenerateTestDatasetOpenCL *opencl,
                                                                  const QuaternionfVector & orientations,

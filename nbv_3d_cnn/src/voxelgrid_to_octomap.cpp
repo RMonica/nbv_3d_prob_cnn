@@ -12,7 +12,7 @@
 #include <sstream>
 
 // custom
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/voxelgrid.h>
 
 int main(int argc, char ** argv)
 {

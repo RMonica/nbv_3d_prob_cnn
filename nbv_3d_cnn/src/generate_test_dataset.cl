@@ -161,6 +161,7 @@ int3 BearingToCubeCoord(const uint3 view_cube_resolution, const float3 bearing)
 void kernel SimulateMultiRay(global const ushort * environment, const uint width, const uint height, const uint depth,
                              const uint rays_size,
                              global const float * origins, global const float * orientations, const float max_range,
+                             const float min_range,
                              global float * distances, global int3 * observed_points)
 {
   const int ray_id = get_global_id(0);
@@ -196,6 +197,12 @@ void kernel SimulateMultiRay(global const ushort * environment, const uint width
 
     if (environment[ipt.z * width * height + ipt.y * width + ipt.x])
     {
+      if ((float)(z) < min_range)
+      {
+        distances[ray_id] = 0.0;
+        return;
+      }
+
       distances[ray_id] = length(rpt - origin) + 0.5f;
       observed_points[ray_id] = ipt;
       return;
@@ -237,6 +244,28 @@ void kernel SimulateMultiRayWithInformationGain(global const float * occupied_en
 
   hits[ray_id] = 0.0f;
   miss[ray_id] = 0.0f;
+
+  float prob_in_min_range = 1.0f;
+  uint min_range_i = (uint)min_range;
+  for (uint z = 0; z < min_range_i; z++)
+  {
+    float3 pt = ray_bearing * (float)(z) + origin;
+    float3 rpt = round(pt);
+    int3 ipt = FloatToInt3(rpt);
+
+    float oe;
+    if (ipt.x < 0 || ipt.y < 0 || ipt.z < 0 ||
+        ipt.x >= width || ipt.y >= height || ipt.z >= depth)
+    {
+      oe = 0.0;
+    }
+    else
+    {
+      oe = occupied_environment[ipt.z * width * height + ipt.y * width + ipt.x];
+    }
+
+    prob_in_min_range = (1.0 - oe) * prob_in_min_range;
+  }
 
   uint max_range_i = (uint)max_range;
   float occluded = 0.0f;
@@ -284,7 +313,7 @@ void kernel SimulateMultiRayWithInformationGain(global const float * occupied_en
     }
 
     float prob_unknown = (1.0f - oe - ee);
-    float prob_unknown_and_reachable = prob_unknown * (1.0 - occluded);
+    float prob_unknown_and_reachable = prob_unknown * (1.0 - occluded) * prob_in_min_range;
     hits[ray_id] += distance_weight * prob_unknown_and_reachable;
     miss[ray_id] += distance_weight * (1.0f - prob_unknown_and_reachable);
 

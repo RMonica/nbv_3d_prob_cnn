@@ -20,6 +20,7 @@ class MergeLogs
   MergeLogs(ros::NodeHandle & nh): m_nh(nh)
   {
     std::string param_string;
+    int param_int;
 
     m_nh.param<std::string>(PARAM_NAME_LOG_FILES, param_string, PARAM_DEFAULT_LOG_FILES);
     {
@@ -33,6 +34,15 @@ class MergeLogs
     }
 
     m_nh.param<std::string>(PARAM_NAME_OUTPUT_FILE, m_output_file, PARAM_DEFAULT_OUTPUT_FILE);
+
+    m_nh.param<int>(PARAM_NAME_FORCE_COUNT, param_int, PARAM_DEFAULT_FORCE_COUNT);
+    m_force_count = param_int;
+
+    m_nh.param<int>(PARAM_NAME_SKIP_FIRST_LINES, param_int, PARAM_DEFAULT_SKIP_FIRST_LINES);
+    m_skip_first_lines = param_int;
+
+    m_nh.param<int>(PARAM_NAME_TIME_SKIP_FIRST_LINES, param_int, PARAM_DEFAULT_TIME_SKIP_FIRST_LINES);
+    m_time_skip_first_lines = param_int;
 
     DoMerge(m_files, m_output_file);
   }
@@ -54,14 +64,19 @@ class MergeLogs
         continue;
       }
 
+      uint64 last_current_unknown, last_total_unknown;
+      double last_computation_time;
+
       std::string line;
-      bool first_line = true;
+      uint64 first_line = m_skip_first_lines;
+      uint64 time_first_line = m_time_skip_first_lines;
+      uint64 skipped_time_first_lines = 0;
       uint64 counter = 0;
       while (std::getline(ifile, line))
       {
         if (first_line)
         {
-          first_line = false;
+          first_line--;
           continue;
         }
 
@@ -84,13 +99,53 @@ class MergeLogs
         }
 
         unknown_sum[counter] += double(current_unknown) / double(total_unknown);
-        time_sum[counter] += computation_time;
+
+        if (time_first_line)
+        {
+          time_first_line--;
+          skipped_time_first_lines++;
+        }
+
+        if (!time_first_line && skipped_time_first_lines)
+        {
+          for (uint64 i = 0; i < skipped_time_first_lines - 1; i++)
+            time_sum[i] += computation_time;
+          skipped_time_first_lines = 0;
+        }
+
+        if (!time_first_line)
+          time_sum[counter] += computation_time;
+
+        counters[counter]++;
+
+        last_computation_time = computation_time;
+        last_current_unknown = current_unknown;
+        last_total_unknown = total_unknown;
+
+        counter++;
+        if (m_force_count > 0 && counter >= m_force_count)
+          break;
+      }
+
+      ROS_INFO("merge_logs: processed %u lines.", unsigned(counter));
+
+      while (counter < m_force_count)
+      {
+        ROS_INFO("merge_logs: padding line %u.", unsigned(counter));
+
+        if (unknown_sum.size() <= counter)
+        {
+          unknown_sum.resize(counter + 1, 0.0);
+          time_sum.resize(counter + 1, 0.0);
+          counters.resize(counter + 1, 0);
+        }
+
+        unknown_sum[counter] += double(last_current_unknown) / double(last_total_unknown);
+        time_sum[counter] += last_computation_time;
         counters[counter]++;
 
         counter++;
       }
-
-      ROS_INFO("merge_logs: processed %u lines.", unsigned(counter));
     }
 
     std::ofstream ofile(output_file);
@@ -119,6 +174,9 @@ class MergeLogs
 
   StringVector m_files;
   std::string m_output_file;
+  uint64 m_force_count;
+  uint64 m_skip_first_lines;
+  uint64 m_time_skip_first_lines;
 };
 
 int main(int argc, char ** argv)

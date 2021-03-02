@@ -1,17 +1,18 @@
 #include "augment_test_dataset.h"
 
-#include "generate_test_dataset_opencl.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
 
 #include <stdint.h>
 #include <string>
+#include <sstream>
 
 #include <Eigen/Dense>
 #include <Eigen/StdVector>
 
 #include <ros/ros.h>
 
-#include "voxelgrid.h"
-#include "origin_visibility.h"
+#include <nbv_3d_cnn/voxelgrid.h>
+#include <nbv_3d_cnn/origin_visibility.h>
 
 class AugmentTestDataset
 {
@@ -25,6 +26,7 @@ class AugmentTestDataset
   AugmentTestDataset(ros::NodeHandle & nh): m_nh(nh), m_opencl(m_nh)
   {
     int param_int;
+    std::string param_string;
 
     m_nh.param<std::string>(PARAM_NAME_SOURCE_IMAGES_PREFIX, m_source_prefix, PARAM_DEFAULT_SOURCE_IMAGES_PREFIX);
 
@@ -42,6 +44,19 @@ class AugmentTestDataset
     m_nh.param<int>(PARAM_NAME_SENSOR_RESOLUTION_Y, param_int, PARAM_DEFAULT_SENSOR_RESOLUTION_Y);
     m_sensor_resolution_y = param_int;
 
+    m_nh.param<std::string>(PARAM_NAME_AUGMENT_ORIENTATIONS, param_string, PARAM_DEFAULT_AUGMENT_ORIENTATIONS);
+    {
+      std::istringstream istr(param_string);
+      istr >> m_augment_orientations.x() >> m_augment_orientations.y() >> m_augment_orientations.z();
+      if (!istr)
+      {
+        ROS_FATAL("augment_test_dataset: invalid augment orientation string: %s", param_string.c_str());
+        exit(1);
+      }
+
+      ROS_INFO_STREAM("augment_test_dataset: augment orientations: " << m_augment_orientations.transpose());
+    }
+
     m_timer = m_nh.createTimer(ros::Duration(0.1), &AugmentTestDataset::onTimer, this, true);
 
     m_counter = 0;
@@ -50,9 +65,9 @@ class AugmentTestDataset
   void onTimer(const ros::TimerEvent &)
   {
     Vector3iVector rotations;
-    for (uint64 a = 0; a < 1; a++)
-      for (uint64 b = 0; b < 2; b++)
-        for (uint64 c = 0; c < 4; c++)
+    for (uint64 a = 0; a < m_augment_orientations.x(); a++)
+      for (uint64 b = 0; b < m_augment_orientations.y(); b++)
+        for (uint64 c = 0; c < m_augment_orientations.z(); c++)
           rotations.push_back(Eigen::Vector3i(a, b, c));
 
     const std::string directional_gt_filename = m_source_prefix + std::to_string(m_counter) +
@@ -102,6 +117,10 @@ class AugmentTestDataset
       r_empty = r_empty->Rotate90n(0, 2, rotation[1]);
       r_frontier = r_frontier->Rotate90n(0, 2, rotation[1]);
       r_gt = r_gt->Rotate90n(0, 2, rotation[1]);
+
+      r_empty = r_empty->Rotate90n(1, 2, rotation[0]);
+      r_frontier = r_frontier->Rotate90n(1, 2, rotation[0]);
+      r_gt = r_gt->Rotate90n(1, 2, rotation[0]);
 
       const Voxelgrid & empty = *r_empty;
       const Voxelgrid & frontier = *r_frontier;
@@ -184,6 +203,8 @@ class AugmentTestDataset
 
   std::string m_source_prefix;
   std::string m_dest_prefix;
+
+  Eigen::Vector3i m_augment_orientations;
 
   uint64 m_sensor_resolution_x;
   uint64 m_sensor_resolution_y;

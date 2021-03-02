@@ -1,0 +1,34 @@
+<launch>
+  <!--launch-prefix="gdb -ex run - -args" -->
+
+  <node name="generate_test_dataset" type="generate_test_dataset" pkg="nbv_3d_cnn" output="screen" clear_params="true" >
+    <param name="source_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/scenes_realistic/" />
+    <param name="source_image_suffix" type="string" value=".bt" />
+
+    <param name="dest_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/environments_3d_realistic/" />
+
+    <!--<param name="sub_image_width" type="int" value="256" />-->
+    <param name="environment_resize" type="string" value="1 1" />
+
+    <param name="sensor_range_voxels" type="double" value="128" />
+
+    <param name="accuracy_skip_voxels" type="int" value="8" />
+
+    <param name="realistic_environment_size" type="string" value="128 128 96" />
+
+    <param name="sensor_resolution_y" type="int" value="96" />
+    <param name="sensor_resolution_x" type="int" value="128" />
+    <param name="sensor_focal_length" type="double" value="112" /> <!-- FOV ~ 60 deg -->
+
+    <param name="view_cube_resolution" type="int" value="16" />
+    <!--<param name="view_cube_resolution" type="int" value="4" />-->
+
+    <param name="mode_3d" type="string" value="3d_realistic" />
+
+    <param name="num_view_poses_min" type="int" value="30" />
+    <param name="num_view_poses_max" type="int" value="40" />
+
+    <param name="prefix_list" type="string" value="scene_" />
+  </node>
+
+</launch>

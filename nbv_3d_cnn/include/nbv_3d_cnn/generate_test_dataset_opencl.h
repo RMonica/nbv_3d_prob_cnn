@@ -21,7 +21,7 @@
 #include <vector>
 #include <cmath>
 
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/voxelgrid.h>
 
 class GenerateTestDatasetOpenCL
 {
@@ -62,15 +62,15 @@ class GenerateTestDatasetOpenCL
 
   void SimulateView(const Voxelgrid & environment, const Eigen::Vector3f & origin,
                     const Vector3fVector ray_orientations,
-                    const float max_range,
+                    const float max_range, const float min_range,
                     FloatVector & nearest_dist, Vector3iVector & observed_points);
 
   void SimulateMultiRay(const Voxelgrid &environment, const Vector3fVector &origins,
-                        const Vector3fVector &bearings, const float max_range,
+                        const Vector3fVector &bearings, const float max_range, const float min_range,
                         FloatVector & nearest_dist, Vector3iVector &observed_points);
   // accepts invalid bearings
   void SimulateMultiRayWI(const Voxelgrid &environment, const Vector3fVector &origins,
-                          const Vector3fVector &bearings, const float max_range,
+                          const Vector3fVector &bearings, const float max_range, const float min_range,
                           FloatVector & nearest_dist, Vector3iVector &observed_points);
 
   void SimulateMultiRayWithInformationGain(const Voxelgrid & known_empty,
@@ -78,7 +78,8 @@ class GenerateTestDatasetOpenCL
                                            const Vector3fVector & origins,
                                            const Vector3fVector &bearings,
                                            const float sensor_f,
-                                           const float max_range, const float min_range,
+                                           const float max_range,
+                                           const float min_range,
                                            const bool stop_at_first_hit,
                                            const float a_priori_occupied_prob,
                                            FloatVector & hits,

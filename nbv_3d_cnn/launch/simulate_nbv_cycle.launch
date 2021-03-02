@@ -16,6 +16,8 @@
     <param name="predict_circular_action_name" type="string" value="/nbv_3d_cnn_predict_circular/predict" />
     <param name="predict_flat_action_name" type="string" value="/nbv_3d_cnn_predict_flat/predict" />
 
+    <param name="save_images" type="bool" value="false" />
+
     <!--
     <param name="nbv_algorithm" type="string" value="Random" />
     <param name="log_file" type="string" value="$(find nbv_3d_cnn)/data/logs/random_nbv_log.txt" />
@@ -68,9 +70,7 @@
   </node>
 
   <node name="nbv_3d_cnn_predict" type="nbv_3d_cnn_predict.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
-    <!--<param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)data/trained_models/final.chkpt" />-->
     <param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)data/trained_models/_final.chkpt" />
-    <!--<param name="checkpoint_file" type="string" value="$(find nbv_3d_cnn)data/trained_models/2_final.chkpt" />-->
 
     <param name="sub_image_expand_pow" type="int" value="2" />
 

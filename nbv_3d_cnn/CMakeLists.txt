@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(nbv_3d_cnn)
 
-add_compile_options(-std=c++11)
+#add_compile_options(-std=c++11)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -12,11 +12,13 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   visualization_msgs
   eigen_conversions
+  std_msgs
 )
 
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(octomap REQUIRED)
+find_package(PCL REQUIRED)
 
 find_package(OpenCL REQUIRED)
 add_definitions(-DCL_HPP_MINIMUM_OPENCL_VERSION=110)
@@ -67,10 +69,10 @@ generate_messages(
 ## catkin specific configuration ##
 ###################################
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES nbv_3d_cnn
-#  CATKIN_DEPENDS roscpp rospy
-#  DEPENDS system_lib
+  INCLUDE_DIRS include
+  LIBRARIES nbv_3d_cnn_voxelgrid
+  CATKIN_DEPENDS roscpp std_msgs
+  DEPENDS Eigen3 OpenCV octomap
 )
 
 ###########
@@ -78,11 +80,12 @@ catkin_package(
 ###########
 
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${OpenCL_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
   ${OCTOMAP_INCLUDE_DIRS}
 )
 
@@ -93,14 +96,28 @@ add_custom_command(
   VERBATIM
   )
 
-add_executable(generate_test_dataset
-  src/generate_test_dataset.cpp
+add_library(nbv_3d_cnn_voxelgrid
+  src/voxelgrid.cpp
   src/generate_test_dataset_opencl.cpp
   src/generate_test_dataset.cl.h
   src/origin_visibility.cpp
   src/origin_visibility_ocl.cpp
   src/generate_single_image.cpp
-  src/voxelgrid.cpp
+  src/simulate_nbv_cycle_adapter.cpp
+)
+
+add_dependencies(nbv_3d_cnn_voxelgrid ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(nbv_3d_cnn_voxelgrid
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${EIGEN3_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
+  ${OpenCL_LIBRARIES}
+)
+
+add_executable(generate_test_dataset
+  src/generate_test_dataset.cpp
 )
 
 add_dependencies(generate_test_dataset ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -111,15 +128,11 @@ target_link_libraries(generate_test_dataset
   ${EIGEN3_LIBRARIES}
   ${OpenCL_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(augment_test_dataset
   src/augment_test_dataset.cpp
-  src/generate_test_dataset_opencl.cpp
-  src/generate_test_dataset.cl.h
-  src/origin_visibility.cpp
-  src/origin_visibility_ocl.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(augment_test_dataset ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -130,17 +143,11 @@ target_link_libraries(augment_test_dataset
   ${EIGEN3_LIBRARIES}
   ${OpenCL_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(simulate_nbv_cycle
   src/simulate_nbv_cycle.cpp
-  src/simulate_nbv_cycle_adapter.cpp
-  src/generate_test_dataset_opencl.cpp
-  src/generate_test_dataset.cl.h
-  src/origin_visibility.cpp
-  src/origin_visibility_ocl.cpp
-  src/generate_single_image.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(simulate_nbv_cycle ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -151,16 +158,11 @@ target_link_libraries(simulate_nbv_cycle
   ${EIGEN3_LIBRARIES}
   ${OpenCL_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(test_visibility_matrix
   src/test_visibility_matrix.cpp
-  src/generate_test_dataset_opencl.cpp
-  src/generate_test_dataset.cl.h
-  src/origin_visibility.cpp
-  src/origin_visibility_ocl.cpp
-  src/generate_single_image.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(test_visibility_matrix ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -171,11 +173,11 @@ target_link_libraries(test_visibility_matrix
   ${EIGEN3_LIBRARIES}
   ${OpenCL_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(voxelgrid_visualization
   src/voxelgrid_visualization.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(voxelgrid_visualization ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -185,6 +187,7 @@ target_link_libraries(voxelgrid_visualization
   ${OpenCV_LIBRARIES}
   ${EIGEN3_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(merge_logs
@@ -201,7 +204,6 @@ target_link_libraries(merge_logs
 
 add_executable(voxelgrid_to_octomap
   src/voxelgrid_to_octomap.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(voxelgrid_to_octomap ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -211,11 +213,11 @@ target_link_libraries(voxelgrid_to_octomap
   ${OpenCV_LIBRARIES}
   ${EIGEN3_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(voxelgrid_to_binvoxelgrid
   src/voxelgrid_to_binvoxelgrid.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(voxelgrid_to_binvoxelgrid ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -225,11 +227,11 @@ target_link_libraries(voxelgrid_to_binvoxelgrid
   ${OpenCV_LIBRARIES}
   ${EIGEN3_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(binvoxelgrid_to_voxelgrid
   src/binvoxelgrid_to_voxelgrid.cpp
-  src/voxelgrid.cpp
 )
 
 add_dependencies(binvoxelgrid_to_voxelgrid ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -239,12 +241,7 @@ target_link_libraries(binvoxelgrid_to_voxelgrid
   ${OpenCV_LIBRARIES}
   ${EIGEN3_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
-)
-
-include_directories(
-  ${OCTOMAP_INCLUDE_DIRS}
-  ${catkin_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS}
+  nbv_3d_cnn_voxelgrid
 )
 
 add_executable(generate_3d_scenes src/generate_3d_scenes.cpp)
@@ -255,6 +252,17 @@ target_link_libraries(generate_3d_scenes
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
   ${EIGEN3_LIBRARIES}
+)
+
+add_executable(generate_3d_scenes_realistic src/generate_3d_scenes_realistic.cpp)
+
+add_dependencies(generate_3d_scenes_realistic ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(generate_3d_scenes_realistic
+  ${catkin_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
+  ${EIGEN3_LIBRARIES}
+  ${PCL_LIBRARIES}
 )
 
 #############

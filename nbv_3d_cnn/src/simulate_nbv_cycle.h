@@ -18,6 +18,9 @@
 #define PARAM_NAME_DEBUG_OUTPUT_FOLDER     "debug_output_folder"
 #define PARAM_DEFAULT_DEBUG_OUTPUT_FOLDER  ""
 
+#define PARAM_NAME_INITIAL_VIEW            "initial_view"
+#define PARAM_DEFAULT_INITIAL_VIEW         "" // empty for random
+
 #define PARAM_NAME_PREDICT_ACTION_NAME     "predict_action_name"
 #define PARAM_DEFAULT_PREDICT_ACTION_NAME  "predict"
 
@@ -45,6 +48,9 @@
 #define PARAM_NAME_MAX_ITERATIONS          "max_iterations"
 #define PARAM_DEFAULT_MAX_ITERATIONS       (int(100))
 
+#define PARAM_NAME_SAMPLE_FIXED_NUMBER_OF_VIEWS    "sample_fixed_number_of_views" // for AutocompleteFixedNumberIGain
+#define PARAM_DEFAULT_SAMPLE_FIXED_NUMBER_OF_VIEWS (int(100))
+
 #define PARAM_NAME_NBV_ALGORITHM           "nbv_algorithm"
 #define PARAM_VALUE_NBV_ALGORITHM_RANDOM   "Random"
 #define PARAM_VALUE_NBV_ALGORITHM_CNNDirectional "CNNDirectional"
@@ -54,6 +60,7 @@
 #define PARAM_VALUE_NBV_ALGORITHM_InformationGain "InformationGain"
 #define PARAM_VALUE_NBV_ALGORITHM_InformationGainProb "InformationGainProb"
 #define PARAM_VALUE_NBV_ALGORITHM_AutocompleteIGain "AutocompleteIGain"
+#define PARAM_VALUE_NBV_ALGORITHM_AutocompleteFixedNumberIGain "AutocompleteFixedNumberIGain"
 #define PARAM_VALUE_NBV_ALGORITHM_OmniscientGain "OmniscientGain"
 #define PARAM_DEFAULT_NBV_ALGORITHM        PARAM_VALUE_NBV_ALGORITHM_RANDOM
 

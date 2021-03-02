@@ -25,7 +25,17 @@
 #include <nbv_3d_cnn/PredictAction.h>
 #include <nbv_3d_cnn/Predict3dAction.h>
 #include <nbv_3d_cnn/Floats.h>
-#include "generate_single_image.h"
+#include <nbv_3d_cnn/generate_single_image.h>
+
+struct ViewWithScore
+{
+  Eigen::Vector3f origin;
+  Eigen::Quaternionf orientation;
+  float score;
+
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+};
+typedef std::vector<ViewWithScore, Eigen::aligned_allocator<ViewWithScore> > ViewWithScoreVector;
 
 class INBVAdapter
 {
@@ -46,7 +56,8 @@ class INBVAdapter
                                const Vector3fVector & skip_origins,
                                const QuaternionfVector & skip_orentations,
                                Eigen::Vector3f & origin,
-                               Eigen::Quaternionf & orientation
+                               Eigen::Quaternionf & orientation,
+                               ViewWithScoreVector * const all_views_with_scores // pass NULL if not interested
                                ) = 0;
 
   virtual Voxelgrid GetScores() const = 0;
@@ -69,7 +80,8 @@ class RandomNBVAdapter: public INBVAdapter
                        const Vector3fVector & skip_origins,
                        const QuaternionfVector & skip_orentations,
                        Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation) override;
+                       Eigen::Quaternionf & orientation,
+                       ViewWithScoreVector * const all_views_with_scores) override;
 
   Voxelgrid GetScores() const override {return m_last_scores; }
   Voxelgrid4 GetColorScores() const override {return Voxelgrid4(); }
@@ -100,11 +112,12 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
     MODE_FLAT,
   };
   explicit CNNDirectionalNBVAdapter(ros::NodeHandle & nh,
-                                         GenerateTestDatasetOpenCL & opencl,
-                                         const bool is_3d,
-                                         const Eigen::Vector2f & sensor_hfov,
-                                         const Mode mode,
-                                         const uint64_t accuracy_skip);
+                                    GenerateTestDatasetOpenCL & opencl,
+                                    const bool is_3d,
+                                    const Eigen::Vector2f & sensor_hfov,
+                                    const Mode mode,
+                                    const uint64_t accuracy_skip,
+                                    const uint64_t cnn_accuracy_skip);
 
   bool GetNextBestView(const Voxelgrid & environment,
                        const Voxelgrid & empty,
@@ -113,25 +126,28 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
                        const Vector3fVector & skip_origins,
                        const QuaternionfVector & skip_orentations,
                        Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation) override;
+                       Eigen::Quaternionf & orientation,
+                       ViewWithScoreVector * const all_views_with_scores) override;
 
   bool GetNextBestView3d(const Voxelgrid & environment,
-                       const Voxelgrid & empty,
-                       const Voxelgrid & occupied,
-                       const Voxelgrid & frontier,
-                       const Vector3fVector & skip_origins,
-                       const QuaternionfVector & skip_orentations,
-                       Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation);
+                         const Voxelgrid & empty,
+                         const Voxelgrid & occupied,
+                         const Voxelgrid & frontier,
+                         const Vector3fVector & skip_origins,
+                         const QuaternionfVector & skip_orentations,
+                         Eigen::Vector3f & origin,
+                         Eigen::Quaternionf & orientation,
+                         ViewWithScoreVector * const all_views_with_scores);
 
   bool GetNextBestView2d(const Voxelgrid & environment,
-                       const Voxelgrid & empty,
-                       const Voxelgrid & occupied,
-                       const Voxelgrid & frontier,
-                       const Vector3fVector & skip_origins,
-                       const QuaternionfVector & skip_orentations,
-                       Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation);
+                         const Voxelgrid & empty,
+                         const Voxelgrid & occupied,
+                         const Voxelgrid & frontier,
+                         const Vector3fVector & skip_origins,
+                         const QuaternionfVector & skip_orentations,
+                         Eigen::Vector3f & origin,
+                         Eigen::Quaternionf & orientation,
+                         ViewWithScoreVector * const all_views_with_scores);
 
   virtual bool IsRandom() const override {return false; }
 
@@ -156,6 +172,7 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
   GenerateTestDatasetOpenCL & m_opencl;
 
   uint64_t m_accuracy_skip;
+  uint64_t m_cnn_accuracy_skip;
 
   bool m_is_3d;
   Eigen::Vector2f m_sensor_hfov;
@@ -173,7 +190,8 @@ class CNNQuatNBVAdapter: public INBVAdapter
   typedef std::shared_ptr<Predict3dActionClient> Predict3dActionClientPtr;
 
   explicit CNNQuatNBVAdapter(ros::NodeHandle & nh, const bool is_3d,
-                                   const uint64_t accuracy_skip);
+                             const uint64_t accuracy_skip,
+                             const uint64_t cnn_accuracy_skip);
 
   bool GetNextBestView(const Voxelgrid & environment,
                        const Voxelgrid & empty,
@@ -182,7 +200,8 @@ class CNNQuatNBVAdapter: public INBVAdapter
                        const Vector3fVector & skip_origins,
                        const QuaternionfVector & skip_orentations,
                        Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation) override;
+                       Eigen::Quaternionf & orientation,
+                       ViewWithScoreVector * const all_views_with_scores) override;
 
   bool GetNextBestView3d(const Voxelgrid & environment,
                          const Voxelgrid & empty,
@@ -191,7 +210,8 @@ class CNNQuatNBVAdapter: public INBVAdapter
                          const Vector3fVector & skip_origins,
                          const QuaternionfVector & skip_orentations,
                          Eigen::Vector3f & origin,
-                         Eigen::Quaternionf & orientation);
+                         Eigen::Quaternionf & orientation,
+                         ViewWithScoreVector * const all_views_with_scores);
 
   bool GetNextBestView2d(const Voxelgrid & environment,
                          const Voxelgrid & empty,
@@ -200,7 +220,8 @@ class CNNQuatNBVAdapter: public INBVAdapter
                          const Vector3fVector & skip_origins,
                          const QuaternionfVector & skip_orentations,
                          Eigen::Vector3f & origin,
-                         Eigen::Quaternionf & orientation);
+                         Eigen::Quaternionf & orientation,
+                         ViewWithScoreVector * const all_views_with_scores);
 
   virtual bool IsRandom() const override {return false; }
 
@@ -215,6 +236,7 @@ class CNNQuatNBVAdapter: public INBVAdapter
   bool m_is_3d;
 
   uint64 m_accuracy_skip;
+  uint64 m_cnn_accuracy_skip;
 
   PredictActionClientPtr m_predict_action_client;
   Predict3dActionClientPtr m_predict_3d_action_client;
@@ -234,6 +256,10 @@ class InformationGainNBVAdapter: public INBVAdapter
   typedef std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i> > Vector2iVector;
   typedef std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f> > Vector3fVector;
   typedef std::vector<Eigen::Vector3i, Eigen::aligned_allocator<Eigen::Vector3i> > Vector3iVector;
+  typedef std::vector<bool> BoolVector;
+
+  typedef uint64_t uint64;
+  typedef std::vector<uint64> Uint64Vector;
 
   explicit InformationGainNBVAdapter(ros::NodeHandle & nh,
                                      GenerateTestDatasetOpenCL &opencl,
@@ -246,7 +272,8 @@ class InformationGainNBVAdapter: public INBVAdapter
                                      const Eigen::Vector2f & sensor_hfov,
                                      const bool is_omniscient,
                                      const bool is_3d,
-                                     const uint64_t accuracy_skip);
+                                     const uint64_t accuracy_skip,
+                                     const uint64_t sample_fixed_number_of_views);
 
   bool GetNextBestView(const Voxelgrid & environment,
                        const Voxelgrid & empty,
@@ -255,12 +282,10 @@ class InformationGainNBVAdapter: public INBVAdapter
                        const Vector3fVector & skip_origins,
                        const QuaternionfVector &skip_orentations,
                        Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation) override;
+                       Eigen::Quaternionf & orientation,
+                       ViewWithScoreVector * const all_views_with_scores) override;
 
   virtual bool IsRandom() const override {return false; }
-
-  void SetRegionOfInterest(const Eigen::Vector3i & min, const Eigen::Vector3i & max);
-  void SetROIByLastOrigin(const Eigen::Vector3f & origin, const Eigen::Quaternionf & orientation);
 
   const Voxelgrid::Ptr GetLastExpectedObservation() const
     {return Voxelgrid::Ptr(new Voxelgrid(m_last_expected_observation)); }
@@ -279,11 +304,9 @@ class InformationGainNBVAdapter: public INBVAdapter
 
   private:
   void ForEachEmpty(const Voxelgrid & empty, const uint64 skip_accuracy,
-                    const Eigen::Vector3i & roi_min, const Eigen::Vector3i & roi_max,
-                    const std::function<void(const Eigen::Vector3i &)> &f) const;
+                    const std::function<void(const uint64, const Eigen::Vector3i &)> &f) const;
 
-  void GetNextBestView3DHelper(const bool in_roi,
-                               const Eigen::Vector3i & xyz,
+  void GetNextBestView3DHelper(const Eigen::Vector3i & xyz,
                                const OriginVisibilityVector & ovv,
                                uint64_t & counter,
                                Voxelgrid & not_smoothed_scores,
@@ -291,11 +314,11 @@ class InformationGainNBVAdapter: public INBVAdapter
                                const Eigen::Vector3i & subrect_size,
                                Eigen::Quaternionf & this_orientation,
                                float & this_score,
-                               const QuaternionfVector & orientations
+                               const QuaternionfVector & orientations,
+                               FloatVector & gains
                                ) const;
 
-  void GetNextBestView2DHelper(const bool in_roi,
-                               const Eigen::Vector3i & xyz,
+  void GetNextBestView2DHelper(const Eigen::Vector3i & xyz,
                                const OriginVisibilityVector & ovv,
                                uint64_t & counter,
                                Voxelgrid & not_smoothed_scores,
@@ -313,6 +336,7 @@ class InformationGainNBVAdapter: public INBVAdapter
 
   bool m_is_3d;
   uint64 m_accuracy_skip;
+  uint64 m_sample_fixed_number_of_views;
 
   Voxelgrid m_last_expected_observation;
   Eigen::Quaternionf m_last_orientation;
@@ -326,10 +350,6 @@ class InformationGainNBVAdapter: public INBVAdapter
   float m_a_priori_occupied_prob;
   uint64_t m_view_cube_resolution;
   Eigen::Vector2f m_sensor_hfov;
-
-  Eigen::Vector3i m_region_of_interest_min;
-  Eigen::Vector3i m_region_of_interest_max;
-  Voxelgrid m_prev_scores;
 
   GenerateTestDatasetOpenCL & m_opencl;
   GenerateSingleImage & m_generate_single_image;
@@ -354,7 +374,8 @@ class AutocompleteIGainNBVAdapter: public INBVAdapter
                                        uint64_t directional_view_cube_resolution,
                                        const Eigen::Vector2f & sensor_hfov,
                                        const bool is_3d,
-                                       const uint64_t accuracy_skip);
+                                       const uint64_t accuracy_skip,
+                                       const uint64_t sample_fixed_number_of_views);
 
   bool GetNextBestView(const Voxelgrid & environment,
                        const Voxelgrid & empty,
@@ -363,17 +384,13 @@ class AutocompleteIGainNBVAdapter: public INBVAdapter
                        const Vector3fVector & skip_origins,
                        const QuaternionfVector & skip_orentations,
                        Eigen::Vector3f & origin,
-                       Eigen::Quaternionf & orientation) override;
+                       Eigen::Quaternionf & orientation,
+                       ViewWithScoreVector * const all_views_with_scores) override;
 
   bool Predict3d(const Voxelgrid &empty, const Voxelgrid &frontier, Voxelgrid &autocompleted);
   bool Predict(const Voxelgrid &empty, const Voxelgrid &frontier, Voxelgrid &autocompleted);
 
   virtual bool IsRandom() const override {return false; }
-
-  void SetRegionOfInterest(const Eigen::Vector3i & min, const Eigen::Vector3i & max)
-    {m_information_gain->SetRegionOfInterest(min, max); }
-  void SetROIByLastOrigin(const Eigen::Vector3f & origin, const Eigen::Quaternionf & orientation)
-    {m_information_gain->SetROIByLastOrigin(origin, orientation); }
 
   const Voxelgrid::Ptr GetLastExpectedObservation() const {return m_information_gain->GetLastExpectedObservation(); }
   const Eigen::Quaternionf GetLastOrientation() const {return m_information_gain->GetLastOrientation(); }

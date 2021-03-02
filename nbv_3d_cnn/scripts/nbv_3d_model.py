@@ -6,7 +6,41 @@ import numpy as np
 import math
 import sys
 
-def get_quat_3d_model(sensor_range_voxels, input_shape):
+def downsample_first_axis_by_log_accuracy_skip_voxels(input_tensor, log_accuracy_skip_voxels):
+  accuracy_skip_voxels = 2**log_accuracy_skip_voxels
+
+  result = input_tensor
+  input_shape = input_tensor.shape
+
+  reshape_shape = list(input_shape)
+  reshape_shape[0] = -1
+  reshape_shape[1] = accuracy_skip_voxels
+  reshape_shape.insert(1, input_shape[1] / accuracy_skip_voxels)
+  result = tf.reshape(result, tuple(reshape_shape))
+
+  transpose_shape = range(0, len(reshape_shape))
+  transpose_shape[1] = 2
+  transpose_shape[2] = 1
+  result = tf.transpose(result, transpose_shape)
+  result = result[:, 0]
+
+  return result
+
+def downsample_nth_axis_by_log_accuracy_skip_voxels(input_tensor, log_accuracy_skip_voxels, axis):
+  input_shape = input_tensor.shape
+  transpose_shape = range(0, len(input_shape))
+  transpose_shape[1] = axis
+  transpose_shape[axis] = 1
+
+  result = input_tensor
+  result = tf.transpose(result, transpose_shape)
+
+  result = downsample_first_axis_by_log_accuracy_skip_voxels(result, log_accuracy_skip_voxels)
+
+  result = tf.transpose(result, transpose_shape)
+  return result
+
+def get_quat_3d_model(sensor_range_voxels, input_shape, log_accuracy_skip_voxels):
 
   kernel_size = 3
 
@@ -26,7 +60,7 @@ def get_quat_3d_model(sensor_range_voxels, input_shape):
     skip_connections.append(x)
     #if input size is not power of two, we need to add 1 to the image size during Conv2Dtranspose below
     #or the output size will differ
-    #for some obscure reason, we need to add 1 if the input size IS power of two
+    #for some weird reason, we need to add 1 if the input size IS power of two
     predicted_padding = [1 - (x.get_shape().as_list()[1] % 2),
                          1 - (x.get_shape().as_list()[2] % 2),
                          1 - (x.get_shape().as_list()[3] % 2)]
@@ -46,7 +80,10 @@ def get_quat_3d_model(sensor_range_voxels, input_shape):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU()(x)
 
+  decoder_net_length = len(layer_filters) - log_accuracy_skip_voxels
   for i, filters in enumerate(layer_filters[::-1]):
+    if i >= decoder_net_length:
+      break
     output_padding = skip_connections_padding[-(i + 1)]
     x = tf.keras.layers.Conv3DTranspose(filters=filters,
                                         kernel_size=kernel_size,
@@ -70,6 +107,9 @@ def get_quat_3d_model(sensor_range_voxels, input_shape):
   empty_only_matrix = inputs
   empty_only_matrix = tf.transpose(empty_only_matrix, perm=[4, 0, 1, 2, 3])
   empty_only_matrix = empty_only_matrix[0]
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 1)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 2)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 3)
   empty_only_matrix = tf.expand_dims(empty_only_matrix, -1)
   empty_only_matrix = tf.keras.layers.concatenate([empty_only_matrix, empty_only_matrix,
                                                    empty_only_matrix, empty_only_matrix], axis=4)
@@ -158,9 +198,13 @@ def get_autocomplete_3d_model(sensor_range_voxels, input_shape):
 
   return model
 
-def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
+def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers, log_accuracy_skip_voxels):
 
   kernel_size = 3
+
+  accuracy_skip_voxels = 2**log_accuracy_skip_voxels
+  output_shape = input_shape[0:3]
+  output_shape = [(output_shape[i] / accuracy_skip_voxels) for i in range(0, 3)]
 
   sensor_range = sensor_range_voxels
   num_layers = int(math.floor(math.log(sensor_range, 2))) - 1
@@ -181,7 +225,7 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
             x == (2**output_expand_layers - 1) or y == (2**output_expand_layers - 1) or z == (2**output_expand_layers - 1)):
           output_mask[x][y][z] = 1.0
   output_mask = tf.keras.backend.constant(output_mask, dtype=tf.float32)
-  output_mask = tf.tile(output_mask, input_shape[0:3])
+  output_mask = tf.tile(output_mask, output_shape)
   output_mask = tf.expand_dims(output_mask, -1)
 
   inputs = tf.keras.layers.Input(shape=input_shape, name='input')
@@ -213,8 +257,13 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
                                padding='same')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU()(x)
+    pass
 
+  decoder_net_length = len(layer_filters) - log_accuracy_skip_voxels
   for i, filters in enumerate(layer_filters[::-1]):
+    if i >= decoder_net_length:
+      break
+
     output_padding = skip_connections_padding[-(i + 1)]
     x = tf.keras.layers.Conv3DTranspose(filters=filters,
                                         kernel_size=kernel_size,
@@ -226,6 +275,7 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
     x = tf.keras.layers.LeakyReLU()(x)
     sc = skip_connections[-(i + 1)]
     x = tf.keras.layers.concatenate([x, sc], axis=4)
+    pass
 
   reverse_expand_layer_filters = reversed(expand_layer_filters)
   for filters in reverse_expand_layer_filters:
@@ -237,6 +287,7 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
                                         padding='same')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU()(x)
+    pass
 
   x = tf.keras.layers.Conv3DTranspose(filters=1,
                                       kernel_size=1,
@@ -250,6 +301,9 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
   empty_only_matrix = inputs
   empty_only_matrix = tf.transpose(empty_only_matrix, perm=[4, 0, 1, 2, 3])
   empty_only_matrix = empty_only_matrix[0]
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 1)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 2)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 3)
   empty_only_matrix = tf.expand_dims(empty_only_matrix, -1)
   empty_only_matrix = tf.keras.layers.UpSampling3D(size=2**output_expand_layers)(empty_only_matrix)
 
@@ -262,7 +316,7 @@ def get_3d_model(sensor_range_voxels, input_shape, output_expand_layers):
 
   return model
 
-def get_flat_3d_model(sensor_range_voxels, input_shape, flat_output_channels):
+def get_flat_3d_model(sensor_range_voxels, input_shape, flat_output_channels, log_accuracy_skip_voxels):
 
   kernel_size = 3
 
@@ -306,8 +360,12 @@ def get_flat_3d_model(sensor_range_voxels, input_shape, flat_output_channels):
                                padding='same')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU()(x)
+    pass
 
+  decoder_net_length = len(layer_filters) - log_accuracy_skip_voxels
   for i, filters in enumerate(layer_filters[::-1]):
+    if i >= decoder_net_length:
+      break
     output_padding = skip_connections_padding[-(i + 1)]
     x = tf.keras.layers.Conv3DTranspose(filters=filters,
                                         kernel_size=kernel_size,
@@ -332,6 +390,9 @@ def get_flat_3d_model(sensor_range_voxels, input_shape, flat_output_channels):
   empty_only_matrix = inputs
   empty_only_matrix = tf.transpose(empty_only_matrix, perm=[4, 0, 1, 2, 3])
   empty_only_matrix = empty_only_matrix[0]
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 1)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 2)
+  empty_only_matrix = downsample_nth_axis_by_log_accuracy_skip_voxels(empty_only_matrix, log_accuracy_skip_voxels, 3)
   empty_only_matrix = tf.expand_dims(empty_only_matrix, -1)
   empty_only_matrix = tf.keras.layers.concatenate([empty_only_matrix, ] * flat_output_channels, axis=4)
 

@@ -23,12 +23,13 @@
 #include <fstream>
 
 // custom
-#include "generate_test_dataset_opencl.h"
-#include "origin_visibility.h"
-#include "generate_single_image.h"
-#include "simulate_nbv_cycle_adapter.h"
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
+#include <nbv_3d_cnn/origin_visibility.h>
+#include <nbv_3d_cnn/generate_single_image.h>
+#include <nbv_3d_cnn/simulate_nbv_cycle_adapter.h>
+#include <nbv_3d_cnn/voxelgrid.h>
 #include <nbv_3d_cnn/PredictAction.h>
+#include "generate_test_dataset.h"
 
 class SimulateNBVCycle
 {
@@ -50,15 +51,36 @@ class SimulateNBVCycle
     double param_double;
     int param_int;
 
+    m_is_3d_realistic = false;
     m_nh.param<std::string>(PARAM_NAME_3D_MODE, param_string, PARAM_DEFAULT_3D_MODE);
     if (param_string == PARAM_VALUE_3D_MODE_2D)
       m_is_3d = false;
     else if (param_string == PARAM_VALUE_3D_MODE_3D)
       m_is_3d = true;
+    else if (param_string == PARAM_VALUE_3D_MODE_3D_REALISTIC)
+    {
+      m_is_3d = true;
+      m_is_3d_realistic = true;
+    }
     else
     {
       ROS_ERROR("simulate_nbv_cycle: invalid value for parameter %s: %s", PARAM_NAME_3D_MODE, param_string.c_str());
       m_is_3d = false;
+    }
+
+    m_nh.param<std::string>(PARAM_NAME_REALISTIC_ENVIRONMENT_SIZE, param_string, PARAM_DEFAULT_REALISTIC_ENVIRONMENT_SIZE);
+    m_realistic_environment_size = Eigen::Vector3i::Zero();
+    if (!param_string.empty())
+    {
+      std::istringstream istr(param_string);
+      istr >> m_realistic_environment_size.x();
+      istr >> m_realistic_environment_size.y();
+      istr >> m_realistic_environment_size.z();
+      if (!istr || (m_realistic_environment_size.array() <= 0).any())
+      {
+        ROS_FATAL("simulate_nbv_cycle: could not parse env size string \"%s\".",
+                  param_string.c_str());
+      }
     }
 
     m_nh.param<std::string>(PARAM_NAME_IMAGE_FILE_NAME, m_image_file_name, PARAM_DEFAULT_IMAGE_FILE_NAME);
@@ -79,6 +101,9 @@ class SimulateNBVCycle
     m_nh.param<double>(PARAM_NAME_SENSOR_RANGE_VOXELS, param_double, PARAM_DEFAULT_SENSOR_RANGE_VOXELS);
     m_sensor_range_voxels = param_double;
 
+    m_nh.param<double>(PARAM_NAME_SENSOR_MIN_RANGE_VOXELS, param_double, PARAM_DEFAULT_SENSOR_MIN_RANGE_VOXELS);
+    m_sensor_min_range_voxels = param_double;
+
     m_nh.param<double>(PARAM_NAME_A_PRIORI_OCCUPIED_PROB, param_double, PARAM_DEFAULT_A_PRIORI_OCCUPIED_PROB);
     m_a_priori_occupied_prob = param_double;
 
@@ -98,6 +123,29 @@ class SimulateNBVCycle
     m_nh.param<int>(PARAM_NAME_ACCURACY_SKIP_VOXELS, param_int, PARAM_DEFAULT_ACCURACY_SKIP_VOXELS);
     m_accuracy_skip_voxels = param_int;
 
+    m_nh.param<int>(PARAM_NAME_CNN_ACCURACY_SKIP_VOXELS, param_int, PARAM_DEFAULT_CNN_ACCURACY_SKIP_VOXELS);
+    m_cnn_accuracy_skip_voxels = param_int;
+
+    m_nh.param<int>(PARAM_NAME_SAMPLE_FIXED_NUMBER_OF_VIEWS, param_int, PARAM_DEFAULT_SAMPLE_FIXED_NUMBER_OF_VIEWS);
+    m_sample_fixed_number_of_views = param_int;
+
+    m_nh.param<std::string>(PARAM_NAME_INITIAL_VIEW, param_string, PARAM_DEFAULT_INITIAL_VIEW);
+    m_has_initial_view = false;
+    if (param_string != "")
+    {
+      std::istringstream istr(param_string);
+      istr >> m_initial_view_origin.x() >> m_initial_view_origin.y() >> m_initial_view_origin.z();
+      istr >> m_initial_view_orientation.x() >> m_initial_view_orientation.y() >>
+                                                m_initial_view_orientation.z() >> m_initial_view_orientation.w();
+      if (!istr)
+      {
+        ROS_ERROR("simulate_nbv_cycle: could not parse initial view string \"%s\".",
+                  param_string.c_str());
+      }
+      else
+        m_has_initial_view = true;
+    }
+
     m_nh.param<std::string>(PARAM_NAME_KNOWN_EMPTY_FILE_NAME, m_known_empty_file_name, PARAM_DEFAULT_KNOWN_EMPTY_FILE_NAME);
     m_nh.param<std::string>(PARAM_NAME_KNOWN_OCCUPIED_FILE_NAME, m_known_occupied_file_name, PARAM_DEFAULT_KNOWN_OCCUPIED_FILE_NAME);
 
@@ -110,6 +158,7 @@ class SimulateNBVCycle
                       PARAM_DEFAULT_SUBMATRIX_RESOLUTION);
 
       m_generate_single_image.reset(new GenerateSingleImage(m_nh, m_opencl, m_is_3d, m_sensor_range_voxels,
+                                                            m_sensor_min_range_voxels,
                                                             m_sensor_resolution_x, m_sensor_resolution_y,
                                                             m_sensor_focal_length, view_cube_resolution,
                                                             submatrix_resolution));
@@ -127,33 +176,50 @@ class SimulateNBVCycle
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_CNNDirectional)
       m_current_adapter.reset(new CNNDirectionalNBVAdapter(m_nh, m_opencl, m_is_3d, sensor_hfov,
                                                                 CNNDirectionalNBVAdapter::MODE_OV,
-                                                                m_accuracy_skip_voxels));
+                                                                m_accuracy_skip_voxels,
+                                                           m_cnn_accuracy_skip_voxels));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_CNNDirectDirectional)
       m_current_adapter.reset(new CNNDirectionalNBVAdapter(m_nh, m_opencl, m_is_3d, sensor_hfov,
                                                                 CNNDirectionalNBVAdapter::MODE_OV_DIRECT,
-                                                                m_accuracy_skip_voxels));
+                                                                m_accuracy_skip_voxels,
+                                                           m_cnn_accuracy_skip_voxels));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_CNNFlat)
       m_current_adapter.reset(new CNNDirectionalNBVAdapter(m_nh, m_opencl, m_is_3d,  sensor_hfov,
                                                                 CNNDirectionalNBVAdapter::MODE_FLAT,
-                                                                m_accuracy_skip_voxels));
+                                                                m_accuracy_skip_voxels,
+                                                           m_cnn_accuracy_skip_voxels));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_CNNQuat)
-      m_current_adapter.reset(new CNNQuatNBVAdapter(m_nh, m_is_3d, m_accuracy_skip_voxels));
+      m_current_adapter.reset(new CNNQuatNBVAdapter(m_nh, m_is_3d, m_accuracy_skip_voxels, m_cnn_accuracy_skip_voxels));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_InformationGain)
       m_current_adapter.reset(new InformationGainNBVAdapter(m_nh, m_opencl, *m_generate_single_image,
                                                             m_sensor_range_voxels, m_igain_min_range_voxels, true, 0.0,
-                                                            4, sensor_hfov, false, m_is_3d, m_accuracy_skip_voxels));
+                                                            4, sensor_hfov, false, m_is_3d,
+                                                            m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels,
+                                                            0));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_InformationGainProb)
       m_current_adapter.reset(new InformationGainNBVAdapter(m_nh, m_opencl, *m_generate_single_image,
                                                             m_sensor_range_voxels, 0.0f, false, m_a_priori_occupied_prob,
-                                                            4, sensor_hfov, false, m_is_3d, m_accuracy_skip_voxels));
+                                                            4, sensor_hfov, false, m_is_3d,
+                                                            m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels,
+                                                            0));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_AutocompleteIGain)
       m_current_adapter.reset(new AutocompleteIGainNBVAdapter(m_nh, m_opencl, *m_generate_single_image,
                                                               m_sensor_range_voxels,
-                                                              4, sensor_hfov, m_is_3d, m_accuracy_skip_voxels));
+                                                              4, sensor_hfov, m_is_3d,
+                                                              m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels,
+                                                              0));
+    else if (param_string == PARAM_VALUE_NBV_ALGORITHM_AutocompleteFixedNumberIGain)
+      m_current_adapter.reset(new AutocompleteIGainNBVAdapter(m_nh, m_opencl, *m_generate_single_image,
+                                                              m_sensor_range_voxels,
+                                                              4, sensor_hfov, m_is_3d,
+                                                              m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels,
+                                                              m_sample_fixed_number_of_views));
     else if (param_string == PARAM_VALUE_NBV_ALGORITHM_OmniscientGain)
       m_current_adapter.reset(new InformationGainNBVAdapter(m_nh, m_opencl, *m_generate_single_image,
                                                             m_sensor_range_voxels, 0.0f, false, 0.0,
-                                                            4, sensor_hfov, true, m_is_3d, m_accuracy_skip_voxels));
+                                                            4, sensor_hfov, true, m_is_3d,
+                                                            m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels,
+                                                            0));
     else
     {
       ROS_FATAL("simulate_nbv_cycle: unknown algorithm %s", param_string.c_str());
@@ -169,10 +235,12 @@ class SimulateNBVCycle
     const uint64 height = environment.GetHeight();
     const uint64 depth = environment.GetDepth();
 
+    const uint64 skip = m_accuracy_skip_voxels * m_cnn_accuracy_skip_voxels;
+
     uint64 count = 0;
-    for (uint64 z = 0; z < depth; z++)
-      for (uint64 y = 0; y < height; y++)
-        for (uint64 x = 0; x < width; x++)
+    for (uint64 z = 0; z < depth; z += skip)
+      for (uint64 y = 0; y < height; y += skip)
+        for (uint64 x = 0; x < width; x += skip)
         {
           if (!environment.at(x, y, z))
             count++;
@@ -182,9 +250,9 @@ class SimulateNBVCycle
 
     const uint64 selected = rand() % count;
     count = 0;
-    for (uint64 z = 0; z < depth && count <= selected; z++)
-      for (uint64 y = 0; y < height && count <= selected; y++)
-        for (uint64 x = 0; x < width && count <= selected; x++)
+    for (uint64 z = 0; z < depth && count <= selected; z += skip)
+      for (uint64 y = 0; y < height && count <= selected; y += skip)
+        for (uint64 x = 0; x < width && count <= selected; x += skip)
         {
           if (!environment.at(x, y, z))
           {
@@ -218,7 +286,12 @@ class SimulateNBVCycle
       if (!m_is_3d)
         env_ptr = Voxelgrid::Load2DOpenCV(environment_filename);
       else
-        env_ptr = Voxelgrid::Load3DOctomap(environment_filename);
+      {
+        if (!m_is_3d_realistic)
+          env_ptr = Voxelgrid::Load3DOctomap(environment_filename);
+        else
+          env_ptr = Voxelgrid::Load3DOctomapWithISize(environment_filename, m_realistic_environment_size);
+      }
       if (!env_ptr)
       {
         ROS_ERROR("simulate_nbv_cycle: error while loading image.");
@@ -257,25 +330,32 @@ class SimulateNBVCycle
 
       Vector3fVector origin_v;
       QuaternionfVector orientation_v;
-      for (uint64 i = 0; i < 1; i++)
       {
         Eigen::Quaternionf orientation;
-        if (!m_is_3d)
+        if (!m_has_initial_view)
         {
-          const float orient = (float(rand()) / RAND_MAX) * M_PI * 2.0f;
-          orientation = Eigen::Quaternionf(
-                Eigen::AngleAxisf(orient, Eigen::Vector3f::UnitZ()) *
-                Eigen::AngleAxisf(M_PI / 2.0f, Eigen::Vector3f::UnitX()) *
-                Eigen::AngleAxisf(M_PI / 2.0f, Eigen::Vector3f::UnitY())
-                );
+          if (!m_is_3d)
+          {
+            const float orient = (float(rand()) / RAND_MAX) * M_PI * 2.0f;
+            orientation = Eigen::Quaternionf(
+                  Eigen::AngleAxisf(orient, Eigen::Vector3f::UnitZ()) *
+                  Eigen::AngleAxisf(M_PI / 2.0f, Eigen::Vector3f::UnitX()) *
+                  Eigen::AngleAxisf(M_PI / 2.0f, Eigen::Vector3f::UnitY())
+                  );
+          }
+          else
+          {
+            const Eigen::Vector3f random_axis = Eigen::Vector3f::Random().normalized();
+            const float random_angle = (float(rand()) / RAND_MAX) * M_PI * 2.0f;
+            orientation = Eigen::Quaternionf(Eigen::AngleAxisf(random_angle, random_axis));
+          }
+          max_origin = FindAvailableOrigin(m_environment_image);
         }
-        else
+        else // if (m_has_initial_view)
         {
-          const Eigen::Vector3f random_axis = Eigen::Vector3f::Random().normalized();
-          const float random_angle = (float(rand()) / RAND_MAX) * M_PI * 2.0f;
-          orientation = Eigen::Quaternionf(Eigen::AngleAxisf(random_angle, random_axis));
+          orientation = m_initial_view_orientation;
+          max_origin = m_initial_view_origin;
         }
-        max_origin = FindAvailableOrigin(m_environment_image);
 
         origin_v.push_back(max_origin);
         orientation_v.push_back(orientation);
@@ -291,13 +371,6 @@ class SimulateNBVCycle
     }
     else
     {
-      if (dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get()))
-      {
-        InformationGainNBVAdapter * const ogn = dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get());
-        if (ogn->IsOmniscient() && !m_prev_origins.empty())
-          ogn->SetROIByLastOrigin(m_prev_origins.back(), m_prev_orientations.back());
-      }
-
       //if (dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get()))
       //{
       //  AutocompleteIGainNBVAdapter * const ogn = dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get());
@@ -314,37 +387,41 @@ class SimulateNBVCycle
                                                    m_prev_origins,
                                                    m_prev_orientations,
                                                    max_origin,
-                                                   max_orientation);
+                                                   max_orientation,
+                                                   NULL);
       ros::Duration elapsed = ros::Time::now() - start;
       computation_time = elapsed.toSec();
 
       cv_grayscale_scores = m_current_adapter->GetScores();
       cv_color_scores = m_current_adapter->GetColorScores();
 
-      if (dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get()))
+      if (m_save_images)
       {
-        InformationGainNBVAdapter * const ogn = dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get());
-        cv::Mat cv_color_leo = ogn->GetDebugImage(m_environment_image);
-        cv::imwrite(test_folder + "leo_" + std::to_string(m_loop_counter) + "_leo.png", cv_color_leo);
+        if (dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get()))
+        {
+          InformationGainNBVAdapter * const ogn = dynamic_cast<InformationGainNBVAdapter *>(m_current_adapter.get());
+          cv::Mat cv_color_leo = ogn->GetDebugImage(m_environment_image);
+          cv::imwrite(test_folder + "leo_" + std::to_string(m_loop_counter) + "_leo.png", cv_color_leo);
 
-        Voxelgrid::ConstPtr not_smoothed_scores = ogn->GetLastNotSmoothedScores();
-        not_smoothed_scores->Save2D3D(test_folder + std::to_string(m_loop_counter) +
-                                               "_last_not_smoothed", m_is_3d);
-      }
+          Voxelgrid::ConstPtr not_smoothed_scores = ogn->GetLastNotSmoothedScores();
+          not_smoothed_scores->Save2D3D(test_folder + std::to_string(m_loop_counter) +
+                                                 "_last_not_smoothed", m_is_3d);
+        }
 
-      if (dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get()))
-      {
-        AutocompleteIGainNBVAdapter * const ogn = dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get());
+        if (dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get()))
+        {
+          AutocompleteIGainNBVAdapter * const ogn = dynamic_cast<AutocompleteIGainNBVAdapter *>(m_current_adapter.get());
 
-        Voxelgrid autocompleted_scores = ogn->GetLastAutocompletedImage();
-        autocompleted_scores.Save2D3D(test_folder + std::to_string(m_loop_counter) + "_autocompleted", m_is_3d);
+          Voxelgrid autocompleted_scores = ogn->GetLastAutocompletedImage();
+          autocompleted_scores.Save2D3D(test_folder + std::to_string(m_loop_counter) + "_autocompleted", m_is_3d);
 
-        cv::Mat debug_image = ogn->GetDebugImage(m_environment_image);
-        cv::imwrite(test_folder + "leo_" + std::to_string(m_loop_counter) + "_leo.png", debug_image);
+          cv::Mat debug_image = ogn->GetDebugImage(m_environment_image);
+          cv::imwrite(test_folder + "leo_" + std::to_string(m_loop_counter) + "_leo.png", debug_image);
 
-        Voxelgrid::ConstPtr not_smoothed_scores = ogn->GetLastNotSmoothedScores();
-        not_smoothed_scores->Save2D3D(test_folder + "" + std::to_string(m_loop_counter) +
-                                      "_last_not_smoothed", m_is_3d);
+          Voxelgrid::ConstPtr not_smoothed_scores = ogn->GetLastNotSmoothedScores();
+          not_smoothed_scores->Save2D3D(test_folder + "" + std::to_string(m_loop_counter) +
+                                        "_last_not_smoothed", m_is_3d);
+        }
       }
     }
 
@@ -424,6 +501,7 @@ class SimulateNBVCycle
                                                               m_sensor_focal_length,
                                                               Eigen::Vector2i(m_sensor_resolution_x, m_sensor_resolution_y),
                                                               m_sensor_range_voxels,
+                                                              m_sensor_min_range_voxels,
                                                               occupied);
 //    Voxelgrid empty = *m_generate_single_image->FillViewKnownUsingCubeResolution(m_environment_image,
 //                                                                                 max_origin,
@@ -556,7 +634,9 @@ class SimulateNBVCycle
   uint64 m_max_iterations;
 
   bool m_is_3d;
+  bool m_is_3d_realistic;
   bool m_save_images;
+  Eigen::Vector3i m_realistic_environment_size;
 
   std::string m_image_file_name;
   std::string m_debug_output_folder;
@@ -565,14 +645,21 @@ class SimulateNBVCycle
   std::string m_known_empty_file_name;
   std::string m_known_occupied_file_name;
 
+  bool m_has_initial_view;
+  Eigen::Vector3f m_initial_view_origin;
+  Eigen::Quaternionf m_initial_view_orientation;
+
   float m_sensor_focal_length;
   uint64 m_sensor_resolution_x;
   uint64 m_sensor_resolution_y;
   float m_sensor_range_voxels;
+  float m_sensor_min_range_voxels;
   float m_igain_min_range_voxels;
   float m_a_priori_occupied_prob;
   float m_autocomplete_igain_rescale_margin;
   uint64 m_accuracy_skip_voxels;
+  uint64 m_cnn_accuracy_skip_voxels;
+  uint64 m_sample_fixed_number_of_views;
 
   Vector3fVector m_prev_origins;
   QuaternionfVector m_prev_orientations;

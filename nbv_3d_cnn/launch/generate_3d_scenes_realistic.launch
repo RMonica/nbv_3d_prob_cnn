@@ -1,0 +1,25 @@
+<launch>
+
+  <node name="generate_3d_scenes_realistic" type="generate_3d_scenes_realistic" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="object_folder_prefix" type="string" value="$(find nbv_3d_cnn_realistic_pointclouds)/data/real_pcd_annotated_for_testing/" />
+    <param name="object_folder_list" type="string" value="bins/bin_ cups/cup_ fourlegs/fourleg_ hammers/hammer_" />
+    <param name="object_suffix_list" type="string" value="_annotated.pcd _annotated.pcd _annotated.pcd _annotated.pcd" />
+    <param name="output_scene_prefix" type="string" value="$(find nbv_3d_cnn)/data/scenes_realistic/scene_" />
+
+    <param name="max_scenes" type="int" value="180" />
+
+    <param name="objects_per_scene_min" type="int" value="6" />
+    <param name="objects_per_scene_max" type="int" value="10" />
+
+<!--
+    <param name="scene_size" type="int" value="64" />
+    <param name="scene_resolution" type="double" value="0.005859375" />
+-->
+    <param name="scene_size" type="int" value="128" />
+    <param name="scene_height" type="int" value="96" />
+    <param name="scene_spread" type="double" value="0.4" />
+    <!--<param name="scene_resolution" type="double" value="0.005859375" />-->
+    <param name="scene_resolution" type="double" value="0.0116" />
+  </node>
+
+</launch>

@@ -1,4 +1,4 @@
-#include "generate_test_dataset_opencl.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
 
 #include "generate_test_dataset.cl.h"
 #include "generate_test_dataset.h"
@@ -379,7 +379,7 @@ void GenerateTestDatasetOpenCL::SimulateMultiRayWithInformationGain(const Voxelg
 
 void GenerateTestDatasetOpenCL::SimulateMultiRayWI(
   const Voxelgrid &environment, const Vector3fVector &origins,
-  const Vector3fVector &bearings, const float max_range,
+  const Vector3fVector &bearings, const float max_range, const float min_range,
   FloatVector & nearest_dist, Vector3iVector &observed_points)
 {
   const uint64 size = origins.size();
@@ -407,7 +407,7 @@ void GenerateTestDatasetOpenCL::SimulateMultiRayWI(
     }
   }
 
-  SimulateMultiRay(environment, origins_out, bearings_out, max_range, nearest_dist_out, observed_points_out);
+  SimulateMultiRay(environment, origins_out, bearings_out, max_range, min_range, nearest_dist_out, observed_points_out);
 
   for (uint64 i = 0; i < mapping.size(); i++)
   {
@@ -419,7 +419,7 @@ void GenerateTestDatasetOpenCL::SimulateMultiRayWI(
 void GenerateTestDatasetOpenCL::SimulateMultiRay(
   const Voxelgrid & environment,
   const Vector3fVector & origins, const Vector3fVector & bearings,
-  const float max_range,
+  const float max_range, const float min_range,
   FloatVector & nearest_dist, Vector3iVector & observed_points)
 {
   uint64 rays_size = origins.size();
@@ -498,6 +498,7 @@ void GenerateTestDatasetOpenCL::SimulateMultiRay(
     m_simulate_multi_ray_kernel->setArg(c++, *m_multi_ray_origins);
     m_simulate_multi_ray_kernel->setArg(c++, *m_multi_ray_orientations);
     m_simulate_multi_ray_kernel->setArg(c++, cl_float(max_range));
+    m_simulate_multi_ray_kernel->setArg(c++, cl_float(min_range));
     m_simulate_multi_ray_kernel->setArg(c++, *m_multi_ray_distances);
     m_simulate_multi_ray_kernel->setArg(c++, *m_multi_ray_observed_points);
   }
@@ -1014,11 +1015,11 @@ void GenerateTestDatasetOpenCL::ComputeGainFromViewCube(const Voxelgrid & input_
 
 void GenerateTestDatasetOpenCL::SimulateView(const Voxelgrid & environment, const Eigen::Vector3f & origin,
                                              const Vector3fVector ray_orientations,
-                                             const float max_range,
+                                             const float max_range, const float min_range,
                                              FloatVector & nearest_dist, Vector3iVector & observed_points)
 {
   const Vector3fVector origins(ray_orientations.size(), origin);
-  SimulateMultiRay(environment, origins, ray_orientations, max_range, nearest_dist, observed_points);
+  SimulateMultiRay(environment, origins, ray_orientations, max_range, min_range, nearest_dist, observed_points);
 }
 
 GenerateTestDatasetOpenCL::CLBufferPtr GenerateTestDatasetOpenCL::CreateBuffer(const CLContextPtr context,

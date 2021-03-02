@@ -1,0 +1,25 @@
+<launch>
+
+  <node name="generate_3d_scenes" type="generate_3d_scenes" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="object_file_prefix" type="string" value="$(find nbv_3d_cnn_data)/data/bt_objects/" />
+    <param name="object_file_list" type="string" value="black_and_decker_lithium_drill_driver.bt  cheerios_14oz.bt
+                                                        melissa_doug_farm_fresh_fruit_banana.bt  pringles_original.bt
+                                                        block_of_wood_6in.bt clorox_disinfecting_wipes_35.bt melissa_doug_farm_fresh_fruit_lemon.bt
+                                                        rubbermaid_ice_guard_pitcher_blue.bt blue_wood_block_1inx1in.bt
+                                                        comet_lemon_fresh_bleach.bt morton_salt_shaker.bt soft_scrub_2lb_4oz.bt
+                                                        brine_mini_soccer_ball.bt domino_sugar_1lb.bt play_go_rainbow_stakin_cups_1_yellow.bt
+                                                        sponge_with_textured_cover.bt campbells_condensed_tomato_soup.bt
+                                                        frenchs_classic_yellow_mustard_14oz.bt  play_go_rainbow_stakin_cups_2_orange.bt" />
+    <param name="output_scene_prefix" type="string" value="$(find nbv_3d_cnn)/data/scenes/scene_" />
+
+    <param name="max_scenes" type="int" value="180" />
+
+    <param name="objects_per_scene_min" type="int" value="20" />
+    <param name="objects_per_scene_max" type="int" value="30" />
+
+    <param name="object_scale" type="double" value="0.5" />
+
+    <param name="scene_size" type="int" value="64" />
+  </node>
+
+</launch>

@@ -7,6 +7,8 @@ import std_msgs.msg as std_msgs
 from rospy.numpy_msg import numpy_msg
 import nbv_3d_cnn.msg as nbv_3d_cnn_msgs
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 
 import numpy as np
@@ -31,6 +33,8 @@ class PredictAction(object):
     self.sub_image_expand_pow = rospy.get_param('~sub_image_expand_pow', 2)
     self.is_3d = rospy.get_param('~is_3d', False)
     self.sub_image_expand = 2**self.sub_image_expand_pow
+
+    self.log_accuracy_skip_voxels = rospy.get_param('~log_accuracy_skip_voxels', 0)
 
     self.raw_pub = rospy.Publisher(self.action_name + "raw_data", numpy_msg(nbv_3d_cnn_msgs.Floats), queue_size=1)
 
@@ -95,11 +99,13 @@ class PredictAction(object):
       rospy.loginfo('nbv_3d_cnn_predict: last input shape does not match, reloading model (type "%s").' % self.model_type)
 
       if (self.model_type == ''):
-        model = nbv_3d_model.get_3d_model(self.sensor_range_voxels, load_input_shape, self.sub_image_expand_pow)
+        model = nbv_3d_model.get_3d_model(self.sensor_range_voxels, load_input_shape,
+                                          self.sub_image_expand_pow, self.log_accuracy_skip_voxels)
       elif (self.model_type == 'flat'):
-        model = nbv_3d_model.get_flat_3d_model(self.sensor_range_voxels, load_input_shape, 52)
+        model = nbv_3d_model.get_flat_3d_model(self.sensor_range_voxels, load_input_shape, 52,
+                                               self.log_accuracy_skip_voxels)
       elif (self.model_type == 'quat'):
-        model = nbv_3d_model.get_quat_3d_model(self.sensor_range_voxels, load_input_shape)
+        model = nbv_3d_model.get_quat_3d_model(self.sensor_range_voxels, load_input_shape, self.log_accuracy_skip_voxels)
       elif (self.model_type == 'autocomplete'):
         model = nbv_3d_model.get_autocomplete_3d_model(self.sensor_range_voxels, load_input_shape)
 
@@ -122,8 +128,12 @@ class PredictAction(object):
       prediction = prediction[0]
       pass
 
-    prediction = np.reshape(prediction.astype('float32'), [image_width * image_height * image_depth *
-                                                           (output_size_mult**3) * output_channels, ])
+    out_image_depth = len(prediction)
+    out_image_height = len(prediction[0])
+    out_image_width = len(prediction[0][0])
+
+    prediction = np.reshape(prediction.astype('float32'), [out_image_width * out_image_height * out_image_depth *
+                                                           output_channels, ])
 
     if (len(prediction) > 10000):
       rospy.loginfo('nbv_3d_cnn_predict: response is big, using raw publisher.')
@@ -135,16 +145,16 @@ class PredictAction(object):
 
     dim_x = std_msgs.MultiArrayDimension()
     dim_x.label = "x"
-    dim_x.size = image_width * output_size_mult
+    dim_x.size = out_image_width
     dim_x.stride = output_channels
     dim_y = std_msgs.MultiArrayDimension()
     dim_y.label = "y"
-    dim_y.size = image_height * output_size_mult
-    dim_y.stride = image_width * output_size_mult * output_channels
+    dim_y.size = out_image_height
+    dim_y.stride = out_image_width * output_channels
     dim_z = std_msgs.MultiArrayDimension()
     dim_z.label = "z"
-    dim_z.size = image_depth * output_size_mult
-    dim_z.stride = image_width * output_size_mult * image_height * output_size_mult * output_channels
+    dim_z.size = out_image_depth
+    dim_z.stride = out_image_width * out_image_height * output_channels
     dim_c = std_msgs.MultiArrayDimension()
     dim_c.label = "channels"
     dim_c.size = output_channels

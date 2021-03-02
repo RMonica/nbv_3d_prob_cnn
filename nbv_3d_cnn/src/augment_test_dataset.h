@@ -19,4 +19,7 @@
 #define PARAM_NAME_SENSOR_RESOLUTION_Y     "sensor_resolution_y"
 #define PARAM_DEFAULT_SENSOR_RESOLUTION_Y  (int(24))
 
+#define PARAM_NAME_AUGMENT_ORIENTATIONS    "augment_orientations"
+#define PARAM_DEFAULT_AUGMENT_ORIENTATIONS "1 2 4" // x y z
+
 #endif // AUGMENT_TEST_DATASET_H

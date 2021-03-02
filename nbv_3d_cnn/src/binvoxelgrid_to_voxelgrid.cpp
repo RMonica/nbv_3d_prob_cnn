@@ -13,7 +13,7 @@
 #include <iostream>
 
 // custom
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/voxelgrid.h>
 
 typedef uint64_t uint64;
 

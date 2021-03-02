@@ -13,8 +13,20 @@
 #define PARAM_NAME_ENVIRONMENT_RESIZE     "environment_resize"
 #define PARAM_DEFAULT_ENVIRONMENT_RESIZE  "1 1" // format: div_x div_y
 
+#define PARAM_NAME_REALISTIC_ENVIRONMENT_SIZE     "realistic_environment_size"
+#define PARAM_DEFAULT_REALISTIC_ENVIRONMENT_SIZE  "64 64 64"
+
+#define PARAM_NAME_ACCURACY_SKIP_VOXELS   "accuracy_skip_voxels"
+#define PARAM_DEFAULT_ACCURACY_SKIP_VOXELS (int(1))
+
+#define PARAM_NAME_CNN_ACCURACY_SKIP_VOXELS   "cnn_accuracy_skip_voxels"
+#define PARAM_DEFAULT_CNN_ACCURACY_SKIP_VOXELS (int(1))
+
 #define PARAM_NAME_SENSOR_RANGE_VOXELS    "sensor_range_voxels"
 #define PARAM_DEFAULT_SENSOR_RANGE_VOXELS (double(150))
+
+#define PARAM_NAME_SENSOR_MIN_RANGE_VOXELS    "sensor_min_range_voxels"
+#define PARAM_DEFAULT_SENSOR_MIN_RANGE_VOXELS (double(0.0))
 
 #define PARAM_NAME_RANDOM_SEED            "random_seed"
 #define PARAM_DEFAULT_RANDOM_SEED         (int(0))
@@ -49,6 +61,7 @@
 #define PARAM_NAME_3D_MODE                "mode_3d"
 #define PARAM_VALUE_3D_MODE_2D            "2d"
 #define PARAM_VALUE_3D_MODE_3D            "3d"
+#define PARAM_VALUE_3D_MODE_3D_REALISTIC  "3d_realistic"
 #define PARAM_DEFAULT_3D_MODE             PARAM_VALUE_3D_MODE_2D
 
 // ** OpenCL **

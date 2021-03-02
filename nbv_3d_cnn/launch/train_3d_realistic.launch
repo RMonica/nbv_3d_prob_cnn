@@ -1,0 +1,35 @@
+<launch>
+
+  <node name="nbv_3d_cnn_generate" type="nbv_3d_cnn_generate.py" pkg="nbv_3d_cnn" output="screen" clear_params="true">
+    <param name="source_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/environments_3d_realistic/" />
+    <param name="dest_images_prefix" type="string" value="$(find nbv_3d_cnn)/data/output/" />
+
+    <param name="tensorboard_directory" type="string" value="$(find nbv_3d_cnn)/data/tensorboard_realistic/" />
+
+    <!--<param name="model_type" type="string" value="" />-->
+    <!--<param name="model_type" type="string" value="quat" />-->
+    <param name="model_type" type="string" value="autocomplete" />
+    <!--<param name="model_type" type="string" value="flat" />-->
+
+    <param name="training_dataset_first_element" type="int" value="0" />
+    <param name="training_dataset_last_element" type="int" value="120" />
+    <param name="validation_dataset_first_element" type="int" value="120" />
+    <param name="validation_dataset_last_element" type="int" value="180" />
+
+    <!--<param name="log_accuracy_skip_voxels" type="int" value="2" />-->
+
+    <!--<param name="load_checkpoint" type="string" value="_final.chkpt" />-->
+    <!--<param name="load_checkpoint" type="string" value="scoreangle_3d_final.chkpt" />-->
+  
+    <param name="num_epochs" type="int" value="120" />
+    <!--<param name="num_epochs" type="int" value="120" />-->
+
+    <param name="is_3d" type="bool" value="true" />
+    <param name="is_3d_realistic" type="bool" value="true" />
+
+    <param name="sensor_range_voxels" type="double" value="32" />
+
+    <param name="evaluation_only" type="bool" value="false" />
+  </node>
+
+</launch>

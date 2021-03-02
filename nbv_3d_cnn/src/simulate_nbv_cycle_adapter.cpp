@@ -1,9 +1,9 @@
-#include "simulate_nbv_cycle_adapter.h"
+#include <nbv_3d_cnn/simulate_nbv_cycle_adapter.h>
 
-#include "origin_visibility.h"
+#include <nbv_3d_cnn/origin_visibility.h>
 #include "simulate_nbv_cycle.h"
-#include "generate_test_dataset_opencl.h"
-#include "generate_single_image.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
+#include <nbv_3d_cnn/generate_single_image.h>
 
 typedef uint64_t uint64;
 typedef int64_t int64;
@@ -16,7 +16,8 @@ bool RandomNBVAdapter::GetNextBestView(const Voxelgrid & environment,
                                        const Vector3fVector & skip_origins,
                                        const QuaternionfVector &skip_orentations,
                                        Eigen::Vector3f & origin,
-                                       Eigen::Quaternionf &orientation)
+                                       Eigen::Quaternionf &orientation,
+                                       ViewWithScoreVector * const all_views_with_scores)
 {
   const float orientation_angle = (float(rand()) / RAND_MAX) * 2.0 * M_PI;
   if (!m_is_3d)
@@ -77,17 +78,19 @@ void CNNDirectionalNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_da
 }
 
 CNNDirectionalNBVAdapter::CNNDirectionalNBVAdapter(ros::NodeHandle & nh,
-                                                             GenerateTestDatasetOpenCL &opencl,
-                                                             const bool is_3d,
-                                                             const Eigen::Vector2f &sensor_hfov,
-                                                             const Mode mode,
-                                                             const uint64_t accuracy_skip):
+                                                   GenerateTestDatasetOpenCL &opencl,
+                                                   const bool is_3d,
+                                                   const Eigen::Vector2f &sensor_hfov,
+                                                   const Mode mode,
+                                                   const uint64_t accuracy_skip,
+                                                   const uint64_t cnn_accuracy_skip):
   m_nh(nh), m_opencl(opencl), m_is_3d(is_3d), m_mode(mode), m_private_nh("~")
 {
   std::string param_string;
 
   m_sensor_hfov = sensor_hfov;
   m_accuracy_skip = accuracy_skip;
+  m_cnn_accuracy_skip = cnn_accuracy_skip;
 
   if (m_mode == MODE_OV || m_mode == MODE_OV_DIRECT)
     m_nh.param<std::string>(PARAM_NAME_PREDICT_ACTION_NAME, param_string, PARAM_DEFAULT_PREDICT_ACTION_NAME);
@@ -112,18 +115,15 @@ CNNDirectionalNBVAdapter::CNNDirectionalNBVAdapter(ros::NodeHandle & nh,
 }
 
 bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
-                                                      const Voxelgrid & empty,
-                                                      const Voxelgrid & occupied,
-                                                      const Voxelgrid & frontier,
-                                                      const Vector3fVector & skip_origins,
-                                                      const QuaternionfVector & skip_orentations,
-                                                      Eigen::Vector3f & origin,
-                                                      Eigen::Quaternionf & orientation)
+                                                 const Voxelgrid & empty,
+                                                 const Voxelgrid & occupied,
+                                                 const Voxelgrid & frontier,
+                                                 const Vector3fVector & skip_origins,
+                                                 const QuaternionfVector & skip_orentations,
+                                                 Eigen::Vector3f & origin,
+                                                 Eigen::Quaternionf & orientation,
+                                                 ViewWithScoreVector * const all_views_with_scores)
 {
-  const uint64 width = empty.GetWidth();
-  const uint64 height = empty.GetHeight();
-  const uint64 depth = empty.GetDepth();
-
   nbv_3d_cnn::Predict3dGoal goal;
   goal.frontier = frontier.ToFloat32MultiArray();
   goal.empty = empty.ToFloat32MultiArray();
@@ -160,20 +160,30 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
   Eigen::Vector3f max_origin = Eigen::Vector3f::Zero();
   Eigen::Quaternionf max_orientation = Eigen::Quaternionf::Identity();
 
+  const uint64 submatrix_side = (m_mode == MODE_OV || m_mode == MODE_OV_DIRECT) ? 4 : 1;
+
+  const uint64 width = m_last_scores.GetWidth() / submatrix_side;
+  const uint64 height = m_last_scores.GetHeight() / submatrix_side;
+  const uint64 depth = m_last_scores.GetDepth() / submatrix_side;
+
   ROS_INFO("simulate_nbv_cycle: finding best score.");
-  const float submatrix_side = m_last_scores.GetWidth() / empty.GetWidth();
   FloatVector gains;
   float max_score = -1.0f;
   for (uint64 z = 0; z < depth; z += m_accuracy_skip)
     for (uint64 y = 0; y < height; y += m_accuracy_skip)
       for (uint64 x = 0; x < width; x += m_accuracy_skip)
       {
-        if (!empty.at(x, y, z))
+        const Eigen::Vector3i origin_i = Eigen::Vector3i(x, y, z) * int(m_cnn_accuracy_skip);
+        if (!empty.at(origin_i))
           continue; // place sensor only in known empty
+
+        ViewWithScore vws;
 
         Eigen::Quaternionf orient = Eigen::Quaternionf::Identity();
         float score = 0;
-        const Eigen::Vector3f origin = Eigen::Vector3f(x, y, z);
+        const Eigen::Vector3f origin = origin_i.cast<float>();
+        vws.origin = origin;
+
         if (m_mode == MODE_OV || m_mode == MODE_OV_DIRECT)
         {
           Voxelgrid submatrix = *m_last_scores.GetSubmatrix(
@@ -185,6 +195,16 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
           const QuaternionfVector orientations = OriginVisibility::GenerateStandardOrientationSet(8);
 
           orient = ov.GetBestSensorOrientationOCL(&m_opencl, orientations, m_sensor_hfov, score, gains);
+
+          if (all_views_with_scores)
+          {
+            for (uint64 orient_i = 0; orient_i < orientations.size(); orient_i++)
+            {
+              vws.orientation = orientations[orient_i];
+              vws.score = gains[orient_i];
+              all_views_with_scores->push_back(vws);
+            }
+          }
         }
         else if (m_mode == MODE_FLAT)
         {
@@ -202,6 +222,13 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
             {
               ms = maybe_ms;
               mi = i;
+            }
+
+            if (all_views_with_scores)
+            {
+              vws.orientation = orientations[i];
+              vws.score = maybe_ms;
+              all_views_with_scores->push_back(vws);
             }
           }
 
@@ -237,29 +264,15 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
   return max_score > 0.0f;
 }
 
-bool CNNDirectionalNBVAdapter::GetNextBestView(const Voxelgrid & environment,
-                                                    const Voxelgrid & empty,
-                                                    const Voxelgrid & occupied,
-                                                    const Voxelgrid & frontier,
-                                                    const Vector3fVector & skip_origins,
-                                                    const QuaternionfVector & skip_orentations,
-                                                    Eigen::Vector3f & origin,
-                                                    Eigen::Quaternionf &orientation)
-{
-  if (m_is_3d)
-    GetNextBestView3d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation);
-  else
-    GetNextBestView2d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation);
-}
-
 bool CNNDirectionalNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
-                                                      const Voxelgrid & empty,
-                                                      const Voxelgrid & occupied,
-                                                      const Voxelgrid & frontier,
-                                                      const Vector3fVector & skip_origins,
-                                                      const QuaternionfVector & skip_orentations,
-                                                      Eigen::Vector3f & origin,
-                                                      Eigen::Quaternionf & orientation)
+                                                 const Voxelgrid & empty,
+                                                 const Voxelgrid & occupied,
+                                                 const Voxelgrid & frontier,
+                                                 const Vector3fVector & skip_origins,
+                                                 const QuaternionfVector & skip_orentations,
+                                                 Eigen::Vector3f & origin,
+                                                 Eigen::Quaternionf & orientation,
+                                                 ViewWithScoreVector * const all_views_with_scores)
 {
   const uint64 width = empty.GetWidth();
   const uint64 height = empty.GetHeight();
@@ -348,6 +361,24 @@ bool CNNDirectionalNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
   return max_score > 0.0f;
 }
 
+bool CNNDirectionalNBVAdapter::GetNextBestView(const Voxelgrid & environment,
+                                               const Voxelgrid & empty,
+                                               const Voxelgrid & occupied,
+                                               const Voxelgrid & frontier,
+                                               const Vector3fVector & skip_origins,
+                                               const QuaternionfVector & skip_orentations,
+                                               Eigen::Vector3f & origin,
+                                               Eigen::Quaternionf &orientation,
+                                               ViewWithScoreVector * const all_views_with_scores)
+{
+  if (m_is_3d)
+    return GetNextBestView3d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation,
+                             all_views_with_scores);
+  else
+    return GetNextBestView2d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation,
+                             all_views_with_scores);
+}
+
 void CNNQuatNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data)
 {
   m_raw_data = raw_data;
@@ -355,12 +386,15 @@ void CNNQuatNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data)
 }
 
 CNNQuatNBVAdapter::CNNQuatNBVAdapter(ros::NodeHandle & nh, const bool is_3d,
-                                                 const uint64_t accuracy_skip): m_nh(nh), m_private_nh("~")
+                                     const uint64_t accuracy_skip,
+                                     const uint64_t cnn_accuracy_skip):
+  m_nh(nh), m_private_nh("~")
 {
   std::string param_string;
 
   m_is_3d = is_3d;
   m_accuracy_skip = accuracy_skip;
+  m_cnn_accuracy_skip = cnn_accuracy_skip;
 
   m_nh.param<std::string>(PARAM_NAME_PREDICT_QUAT_ACTION_NAME, param_string,
                           PARAM_DEFAULT_PREDICT_QUAT_ACTION_NAME);
@@ -381,18 +415,15 @@ CNNQuatNBVAdapter::CNNQuatNBVAdapter(ros::NodeHandle & nh, const bool is_3d,
 }
 
 bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
-                                                const Voxelgrid & empty,
-                                                const Voxelgrid & occupied,
-                                                const Voxelgrid & frontier,
-                                                const Vector3fVector & skip_origins,
-                                                const QuaternionfVector &skip_orentations,
-                                                Eigen::Vector3f & origin,
-                                                Eigen::Quaternionf &orientation)
+                                          const Voxelgrid & empty,
+                                          const Voxelgrid & occupied,
+                                          const Voxelgrid & frontier,
+                                          const Vector3fVector & skip_origins,
+                                          const QuaternionfVector &skip_orentations,
+                                          Eigen::Vector3f & origin,
+                                          Eigen::Quaternionf &orientation,
+                                          ViewWithScoreVector * const all_views_with_scores)
 {
-  const uint64 width = empty.GetWidth();
-  const uint64 height = empty.GetHeight();
-  const uint64 depth = empty.GetDepth();
-
   nbv_3d_cnn::Predict3dGoal goal;
 
   goal.empty = empty.ToFloat32MultiArray();
@@ -428,6 +459,10 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
 
   m_last_scores = *Voxelgrid4::FromFloat32MultiArray(result.scores);
 
+  const uint64 width = m_last_scores.GetWidth();
+  const uint64 height = m_last_scores.GetHeight();
+  const uint64 depth = m_last_scores.GetDepth();
+
   Eigen::Vector3f max_origin = Eigen::Vector3f::Zero();
   Eigen::Quaternionf max_orientation = Eigen::Quaternionf::Identity();
 
@@ -437,7 +472,8 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
     for (uint64 y = 0; y < height; y += m_accuracy_skip)
       for (uint64 x = 0; x < width; x += m_accuracy_skip)
       {
-        if (!empty.at(x, y, z))
+        const Eigen::Vector3i origin_i(x * m_cnn_accuracy_skip, y * m_cnn_accuracy_skip, z * m_cnn_accuracy_skip);
+        if (!empty.at(origin_i))
           continue; // place sensor only in known empty
 
         const float qx = m_last_scores.at(0).at(x, y, z);
@@ -457,8 +493,10 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
           bool should_be_skipped = false;
           for (uint64 i = 0; i < skip_origins.size() && !should_be_skipped; i++)
           {
-            if (skip_orentations[i].vec() == q.vec() &&
-                skip_orentations[i].w() == q.w() && skip_origins[i] == Eigen::Vector3f(x, y, z))
+            const float EPSILON = 0.0001f;
+            if ((skip_orentations[i].vec() - q.vec()).norm() < (3.0f * EPSILON) &&
+                std::abs(skip_orentations[i].w() - q.w()) < EPSILON &&
+                skip_origins[i] == origin_i.cast<float>())
               should_be_skipped = true;
           }
           if (should_be_skipped)
@@ -466,7 +504,7 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
         }
 
         max_score = score;
-        max_origin = Eigen::Vector3f(x, y, z);
+        max_origin = origin_i.cast<float>();
         max_orientation = q;
       }
 
@@ -477,28 +515,32 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
 }
 
 bool CNNQuatNBVAdapter::GetNextBestView(const Voxelgrid & environment,
-                                              const Voxelgrid & empty,
-                                              const Voxelgrid & occupied,
-                                              const Voxelgrid & frontier,
-                                              const Vector3fVector & skip_origins,
-                                              const QuaternionfVector &skip_orentations,
-                                              Eigen::Vector3f & origin,
-                                              Eigen::Quaternionf &orientation)
+                                        const Voxelgrid & empty,
+                                        const Voxelgrid & occupied,
+                                        const Voxelgrid & frontier,
+                                        const Vector3fVector & skip_origins,
+                                        const QuaternionfVector &skip_orentations,
+                                        Eigen::Vector3f & origin,
+                                        Eigen::Quaternionf &orientation,
+                                        ViewWithScoreVector * const all_views_with_scores)
 {
   if (m_is_3d)
-    return GetNextBestView3d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation);
+    return GetNextBestView3d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation,
+                             all_views_with_scores);
   else
-    return GetNextBestView2d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation);
+    return GetNextBestView2d(environment, empty, occupied, frontier, skip_origins, skip_orentations, origin, orientation,
+                             all_views_with_scores);
 }
 
 bool CNNQuatNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
-                                                const Voxelgrid & empty,
-                                                const Voxelgrid & occupied,
-                                                const Voxelgrid & frontier,
-                                                const Vector3fVector & skip_origins,
-                                                const QuaternionfVector &skip_orentations,
-                                                Eigen::Vector3f & origin,
-                                                Eigen::Quaternionf &orientation)
+                                          const Voxelgrid & empty,
+                                          const Voxelgrid & occupied,
+                                          const Voxelgrid & frontier,
+                                          const Vector3fVector & skip_origins,
+                                          const QuaternionfVector &skip_orentations,
+                                          Eigen::Vector3f & origin,
+                                          Eigen::Quaternionf &orientation,
+                                          ViewWithScoreVector * const all_views_with_scores)
 {
 
   const uint64 width = empty.GetWidth();
@@ -594,7 +636,8 @@ InformationGainNBVAdapter::InformationGainNBVAdapter(ros::NodeHandle & nh,
                                                      const Eigen::Vector2f &sensor_hfov,
                                                      const bool is_omniscient,
                                                      const bool is_3d,
-                                                     const uint64_t accuracy_skip):
+                                                     const uint64_t accuracy_skip,
+                                                     const uint64_t sample_fixed_number_of_views):
   m_nh(nh), m_opencl(opencl), m_generate_single_image(generate_single_image)
 {
   m_max_range = max_range;
@@ -608,65 +651,31 @@ InformationGainNBVAdapter::InformationGainNBVAdapter(ros::NodeHandle & nh,
   m_is_omniscent = is_omniscient;
   m_is_3d = is_3d;
   m_accuracy_skip = accuracy_skip;
-
-  m_region_of_interest_min = -Eigen::Vector3i::Ones();
-  m_region_of_interest_max = -Eigen::Vector3i::Ones();
-}
-
-void InformationGainNBVAdapter::SetRegionOfInterest(const Eigen::Vector3i & min, const Eigen::Vector3i & max)
-{
-  m_region_of_interest_min = min;
-  m_region_of_interest_max = max;
-}
-
-void InformationGainNBVAdapter::SetROIByLastOrigin(const Eigen::Vector3f & origin,
-                                                   const Eigen::Quaternionf &orientation)
-{
-  const Eigen::Vector3i range_vec = Eigen::Vector3i(m_max_range, m_max_range, m_max_range);
-  const Eigen::Vector3i last_origin = origin.array().round().cast<int>();
-  const Eigen::Vector3i min = last_origin - range_vec * 2;
-  const Eigen::Vector3i max = last_origin + range_vec * 2;
-  this->SetRegionOfInterest(min, max);
+  m_sample_fixed_number_of_views = sample_fixed_number_of_views;
 }
 
 void InformationGainNBVAdapter::ForEachEmpty(const Voxelgrid & empty, const uint64 skip_accuracy,
-                                             const Eigen::Vector3i & roi_min, const Eigen::Vector3i & roi_max,
-                                             const std::function<void(const Eigen::Vector3i &)> &f) const
+                                             const std::function<void(const uint64 index, const Eigen::Vector3i &)> &f) const
 {
   const uint64 width = empty.GetWidth();
   const uint64 height = empty.GetHeight();
   const uint64 depth = empty.GetDepth();
 
+  uint64 i = 0;
   for (uint64 z = 0; z < depth; z += skip_accuracy)
     for (uint64 y = 0; y < height; y += skip_accuracy)
       for (uint64 x = 0; x < width; x += skip_accuracy)
       {
         const Eigen::Vector3i xyz(x, y, z);
-        if (!((xyz.array() >= roi_min.array()).all() && (xyz.array() < roi_max.array()).all()))
+        if (!empty.at(xyz))
           continue;
 
-        {
-          bool found_not_empty = false;
-          for (uint64 dz = 0; dz < skip_accuracy; dz++)
-            for (uint64 dy = 0; dy < skip_accuracy; dy++)
-              for (uint64 dx = 0; dx < skip_accuracy; dx++)
-              {
-                const Eigen::Vector3i ni(x + dx, y + dy, z + dz);
-                if ((ni.array() >= Eigen::Vector3i(width, height, depth).array()).any())
-                  continue;
-                if (!empty.at(ni))
-                  found_not_empty = true;
-              }
-          if (found_not_empty)
-            continue;
-        }
-
-        f(xyz);
+        f(i, xyz);
+        i++;
       }
 }
 
-void InformationGainNBVAdapter::GetNextBestView3DHelper(const bool in_roi,
-                                                        const Eigen::Vector3i & xyz,
+void InformationGainNBVAdapter::GetNextBestView3DHelper(const Eigen::Vector3i & xyz,
                                                         const OriginVisibilityVector & ovv,
                                                         uint64 & counter,
                                                         Voxelgrid & not_smoothed_scores,
@@ -674,39 +683,23 @@ void InformationGainNBVAdapter::GetNextBestView3DHelper(const bool in_roi,
                                                         const Eigen::Vector3i & subrect_size,
                                                         Eigen::Quaternionf & this_orientation,
                                                         float & this_score,
-                                                        const QuaternionfVector & orientations
+                                                        const QuaternionfVector & orientations,
+                                                        FloatVector & gains
                                                         ) const
 {
-  FloatVector useless_gains;
-  if (in_roi)
-  {
-    const OriginVisibility & nsov = ovv[counter];
+  const OriginVisibility & nsov = ovv[counter];
 
-    not_smoothed_scores.SetSubmatrix(subrect_origin, nsov.GetVisibilityVoxelgrid(m_view_cube_resolution));
-    this_orientation = nsov.GetBestSensorOrientationOCL(&m_opencl,
-                                                        orientations,
-                                                        m_sensor_hfov,
-                                                        this_score,
-                                                        useless_gains);
+  not_smoothed_scores.SetSubmatrix(subrect_origin, nsov.GetVisibilityVoxelgrid(m_view_cube_resolution));
+  this_orientation = nsov.GetBestSensorOrientationOCL(&m_opencl,
+                                                      orientations,
+                                                      m_sensor_hfov,
+                                                      this_score,
+                                                      gains);
 
-    counter++;
-  }
-  else // out of ROI: load from previous
-  {
-    const Voxelgrid subrect = *not_smoothed_scores.GetSubmatrix(subrect_origin, subrect_size);
-    const OriginVisibility nsov = OriginVisibility::FromVoxelgrid(xyz.cast<float>(),
-                                                                  m_view_cube_resolution,
-                                                                  subrect);
-    this_orientation = nsov.GetBestSensorOrientationOCL(&m_opencl,
-                                                        orientations,
-                                                        m_sensor_hfov,
-                                                        this_score,
-                                                        useless_gains);
-  }
+  counter++;
 }
 
-void InformationGainNBVAdapter::GetNextBestView2DHelper(const bool in_roi,
-                                                        const Eigen::Vector3i & xyz,
+void InformationGainNBVAdapter::GetNextBestView2DHelper(const Eigen::Vector3i & xyz,
                                                         const OriginVisibilityVector & ovv,
                                                         uint64 & counter,
                                                         Voxelgrid & not_smoothed_scores,
@@ -718,39 +711,24 @@ void InformationGainNBVAdapter::GetNextBestView2DHelper(const bool in_roi,
                                                         const QuaternionfVector & orientations
                                                         ) const
 {
-  if (in_roi)
+  const OriginVisibility & nsov = ovv[counter];
+
   {
-    const OriginVisibility & nsov = ovv[counter];
-
-    {
-      const OriginVisibility ov = nsov.SmoothByHFOV(m_sensor_hfov.x());
-
-      cv::Mat ns_score_matrix = nsov.GetVisibilityMatrix(m_view_cube_resolution);
-      not_smoothed_scores.SetSubmatrix(subrect_origin, *Voxelgrid::FromOpenCVImage2DFloat(ns_score_matrix));
-
-      cv::Mat score_matrix = ov.GetVisibilityMatrix(m_view_cube_resolution);
-      scores.SetSubmatrix(subrect_origin, *Voxelgrid::FromOpenCVImage2DFloat(score_matrix));
-
-      Eigen::Vector3i index;
-      Eigen::Vector3f bearing;
-      this_score = ov.MaxVisibility(index, bearing);
-      this_orientation = GenerateSingleImage::Bearing2DToQuat(bearing);
-    }
-
-    counter++;
-  }
-  else // out of ROI: load from previous
-  {
-    const Voxelgrid subrect = *not_smoothed_scores.GetSubmatrix(subrect_origin, subrect_size);
-    const OriginVisibility nsov = OriginVisibility::FromVisibilityMatrix(xyz.cast<float>(),
-                                                                         m_view_cube_resolution,
-                                                                         subrect.ToOpenCVImage2D());
     const OriginVisibility ov = nsov.SmoothByHFOV(m_sensor_hfov.x());
+
+    cv::Mat ns_score_matrix = nsov.GetVisibilityMatrix(m_view_cube_resolution);
+    not_smoothed_scores.SetSubmatrix(subrect_origin, *Voxelgrid::FromOpenCVImage2DFloat(ns_score_matrix));
+
+    cv::Mat score_matrix = ov.GetVisibilityMatrix(m_view_cube_resolution);
+    scores.SetSubmatrix(subrect_origin, *Voxelgrid::FromOpenCVImage2DFloat(score_matrix));
+
     Eigen::Vector3i index;
     Eigen::Vector3f bearing;
     this_score = ov.MaxVisibility(index, bearing);
     this_orientation = GenerateSingleImage::Bearing2DToQuat(bearing);
   }
+
+  counter++;
 }
 
 bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
@@ -760,7 +738,8 @@ bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
                                                 const Vector3fVector & skip_origins,
                                                 const QuaternionfVector & skip_orentations,
                                                 Eigen::Vector3f & origin,
-                                                Eigen::Quaternionf &orientation)
+                                                Eigen::Quaternionf &orientation,
+                                                ViewWithScoreVector * const all_views_with_scores)
 {
   const uint64 width = empty.GetWidth();
   const uint64 height = empty.GetHeight();
@@ -777,6 +756,7 @@ bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
   }
 
   const uint64 view_cube_resolution_if_3d = m_is_3d ? m_view_cube_resolution : uint64(1);
+  const uint64 accuracy_skip_if_3d = m_is_3d ? m_accuracy_skip : uint64(1);
 
   Vector3fVector origins;
 
@@ -784,37 +764,67 @@ bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
 
   Eigen::Vector3i roi_min = Eigen::Vector3i::Zero();
   Eigen::Vector3i roi_max = Eigen::Vector3i(width, height, depth);
-  if (m_region_of_interest_max != -Eigen::Vector3i::Ones())
-    roi_max = roi_max.array().min(m_region_of_interest_max.array());
-  if (m_region_of_interest_min != -Eigen::Vector3i::Ones())
-    roi_min = roi_min.array().max(m_region_of_interest_min.array());
   ROS_INFO_STREAM("nbv_3d_cnn: InformationGainNBVAdapter: ROI is: "
                   << roi_min.transpose() << " - " << roi_max.transpose());
 
-  ForEachEmpty(empty, m_accuracy_skip, roi_min, roi_max, [&](const Eigen::Vector3i & xyz)
+  uint64 total_possible_origins_count = 0;
+  ForEachEmpty(empty, m_accuracy_skip, [&](const uint64 i, const Eigen::Vector3i & xyz)
   {
+    total_possible_origins_count = i;
+  });
+  total_possible_origins_count++;
+
+  BoolVector valid_origins(total_possible_origins_count, true);
+  if (m_sample_fixed_number_of_views)
+  {
+    valid_origins.assign(valid_origins.size(), false);
+
+    for (uint64 vi = 0; vi < m_sample_fixed_number_of_views; vi++)
+    {
+      Uint64Vector selectable_indices;
+      selectable_indices.reserve(valid_origins.size());
+      for (uint64 i = 0; i < valid_origins.size(); i++)
+        if (!valid_origins[i])
+          selectable_indices.push_back(i);
+      if (selectable_indices.empty())
+        break; // all poses selected
+      const uint64 selected_i = rand() % selectable_indices.size();
+      const uint64 selected = selectable_indices[selected_i];
+      valid_origins[selected] = true;
+    }
+
+    ROS_INFO("nbv_3d_cnn: InformationGainNBVAdapter: sampled %u viewpoints of %u total viewpoints.",
+             unsigned(m_sample_fixed_number_of_views), unsigned(valid_origins.size()));
+  }
+
+  ForEachEmpty(empty, m_accuracy_skip, [&](const uint64 index, const Eigen::Vector3i & xyz)
+  {
+    if (!valid_origins[index])
+      return;
     origins.push_back(xyz.cast<float>());
   });
 
   if (m_last_scores.IsEmpty())
-    m_last_scores = Voxelgrid(width * m_view_cube_resolution, height * m_view_cube_resolution,
-                              depth * view_cube_resolution_if_3d);
+    m_last_scores = Voxelgrid(width * m_view_cube_resolution / m_accuracy_skip,
+                              height * m_view_cube_resolution / m_accuracy_skip,
+                              depth * view_cube_resolution_if_3d / accuracy_skip_if_3d);
 
   Voxelgrid not_smoothed_scores;
   Voxelgrid scores = m_last_scores;
   if (!m_last_not_smoothed_scores.IsEmpty())
     not_smoothed_scores = m_last_not_smoothed_scores;
   else
-    not_smoothed_scores = Voxelgrid(width * m_view_cube_resolution, height * m_view_cube_resolution,
-                                    depth * view_cube_resolution_if_3d);
+    not_smoothed_scores = Voxelgrid(width * m_view_cube_resolution / m_accuracy_skip,
+                                    height * m_view_cube_resolution / m_accuracy_skip,
+                                    depth * view_cube_resolution_if_3d / accuracy_skip_if_3d);
 
   {
-    const Eigen::Vector3i sub_origin(roi_min.x() * m_view_cube_resolution,
-                                     roi_min.y() * m_view_cube_resolution,
-                                     roi_min.z() * view_cube_resolution_if_3d);
-    const Eigen::Vector3i sub_size((roi_max.x() - roi_min.x()) * m_view_cube_resolution,
-                                   (roi_max.y() - roi_min.y()) * m_view_cube_resolution,
-                                   (roi_max.z() - roi_min.z()) * view_cube_resolution_if_3d);
+    const Eigen::Vector3i sub_origin(roi_min.x() * m_view_cube_resolution / m_accuracy_skip,
+                                     roi_min.y() * m_view_cube_resolution / m_accuracy_skip,
+                                     roi_min.z() * view_cube_resolution_if_3d / accuracy_skip_if_3d);
+    const Eigen::Vector3i sub_size((roi_max.x() - roi_min.x()) * m_view_cube_resolution / m_accuracy_skip,
+                                   (roi_max.y() - roi_min.y()) * m_view_cube_resolution / m_accuracy_skip,
+                                   (roi_max.z() - roi_min.z()) * view_cube_resolution_if_3d / accuracy_skip_if_3d);
     not_smoothed_scores.FillSubmatrix(sub_origin, sub_size, 0.0f);
     scores.FillSubmatrix(sub_origin, sub_size, 0.0f);
   }
@@ -842,30 +852,62 @@ bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
 
   uint64 counter = 0;
   float max_score = -1.0f;
-  ForEachEmpty(empty, m_accuracy_skip, Eigen::Vector3i::Zero(), empty.GetSize(), [&](const Eigen::Vector3i & xyz)
+  ForEachEmpty(empty, m_accuracy_skip, [&](const uint64 index, const Eigen::Vector3i & xyz)
   {
     const uint64 x = xyz.x(), y = xyz.y(), z = xyz.z();
 
+    if (!valid_origins[index])
+      return;
+
     float this_score;
     Eigen::Quaternionf this_orientation;
-    const Eigen::Vector3i subrect_origin(x * m_view_cube_resolution, y * m_view_cube_resolution,
-                                         z * view_cube_resolution_if_3d);
-    const Eigen::Vector3i subrect_size(m_view_cube_resolution, m_view_cube_resolution,
-                                       view_cube_resolution_if_3d);
+    const Eigen::Vector3i subrect_origin(x * m_view_cube_resolution / m_accuracy_skip,
+                                         y * m_view_cube_resolution / m_accuracy_skip,
+                                         z * view_cube_resolution_if_3d / accuracy_skip_if_3d);
+    const Eigen::Vector3i subrect_size(m_view_cube_resolution / m_accuracy_skip,
+                                       m_view_cube_resolution / m_accuracy_skip,
+                                       view_cube_resolution_if_3d / accuracy_skip_if_3d);
 
-    const bool in_roi = (xyz.array() >= roi_min.array()).all() && (xyz.array() < roi_max.array()).all();
+    FloatVector gains;
 
     if (m_is_3d)
-      GetNextBestView3DHelper(in_roi, xyz, ovv, counter, not_smoothed_scores, subrect_origin,
-                              subrect_size, this_orientation, this_score, orientations);
+      GetNextBestView3DHelper(xyz, ovv, counter, not_smoothed_scores, subrect_origin,
+                              subrect_size, this_orientation, this_score, orientations, gains);
     else
-      GetNextBestView2DHelper(in_roi, xyz, ovv, counter, scores, not_smoothed_scores, subrect_origin,
+      GetNextBestView2DHelper(xyz, ovv, counter, scores, not_smoothed_scores, subrect_origin,
                               subrect_size, this_orientation, this_score, orientations);
+
+    const Eigen::Vector3f this_origin = Eigen::Vector3f(x, y, z);
+    {
+      bool should_be_skipped = false;
+      for (uint64 i = 0; i < skip_origins.size() && !should_be_skipped; i++)
+      {
+        const float EPSILON = 0.0001f;
+        if ((skip_orentations[i].vec() - this_orientation.vec()).norm() < (3.0f * EPSILON) &&
+            std::abs(skip_orentations[i].w() - this_orientation.w()) < EPSILON &&
+            skip_origins[i] == this_origin)
+          should_be_skipped = true;
+      }
+      if (should_be_skipped)
+        return;
+    }
+
+    if (all_views_with_scores)
+    {
+      ViewWithScore vws;
+      vws.origin = xyz.cast<float>();
+      for (uint64 i = 0; i < orientations.size(); i++)
+      {
+        vws.score = gains[i];
+        vws.orientation = orientations[i];
+        all_views_with_scores->push_back(vws);
+      }
+    }
 
     if (max_score < this_score)
     {
       max_score = this_score;
-      max_origin = Eigen::Vector3f(x, y, z);
+      max_origin = this_origin;
       max_orientation = this_orientation;
     }
   });
@@ -896,7 +938,7 @@ bool InformationGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
     const Eigen::Vector2i res(16, m_is_3d ? 16 : 1);
     const uint64 focal = 8;
     Vector3iVector nearest = m_generate_single_image.SimulateView(environment, origin, axisq, focal, res,
-                                                                  m_max_range, dists, ray_bearings);
+                                                                  m_max_range, m_min_range, dists, ray_bearings);
     m_opencl.FillEnvironmentFromView(expected_observation, origin, axisq, focal, res, dists,
                                      nearest, expected_observation);
   }
@@ -959,7 +1001,8 @@ AutocompleteIGainNBVAdapter::AutocompleteIGainNBVAdapter(ros::NodeHandle & nh,
                                                          uint64_t directional_view_cube_resolution,
                                                          const Eigen::Vector2f & sensor_hfov,
                                                          const bool is_3d,
-                                                         const uint64_t accuracy_skip):
+                                                         const uint64_t accuracy_skip,
+                                                         const uint64_t sample_fixed_number_of_views):
   m_nh(nh), m_opencl(opencl), m_generate_single_image(generate_single_image), m_private_nh("~")
 {
   m_is_3d = is_3d;
@@ -994,7 +1037,8 @@ AutocompleteIGainNBVAdapter::AutocompleteIGainNBVAdapter(ros::NodeHandle & nh,
                                                          sensor_hfov,
                                                          false,
                                                          m_is_3d,
-                                                         accuracy_skip
+                                                         accuracy_skip,
+                                                         sample_fixed_number_of_views
                                                          ));
 }
 
@@ -1092,7 +1136,8 @@ bool AutocompleteIGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
                                                   const Vector3fVector & skip_origins,
                                                   const QuaternionfVector &skip_orentations,
                                                   Eigen::Vector3f & origin,
-                                                  Eigen::Quaternionf &orientation)
+                                                  Eigen::Quaternionf &orientation,
+                                                  ViewWithScoreVector * const all_views_with_scores)
 {
 
 
@@ -1120,5 +1165,6 @@ bool AutocompleteIGainNBVAdapter::GetNextBestView(const Voxelgrid & environment,
   ROS_INFO("simulate_nbv_cycle: AutocompleteIGainNBVAdapter: computing information gain.");
 
   return m_information_gain->GetNextBestView(environment, empty, autocompleted, frontier,
-                                             skip_origins, skip_orentations, origin, orientation);
+                                             skip_origins, skip_orentations, origin, orientation,
+                                             all_views_with_scores);
 }

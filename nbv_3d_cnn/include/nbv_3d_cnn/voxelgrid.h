@@ -30,6 +30,7 @@ class Voxelgrid
   typedef uint64_t uint64;
   typedef uint8_t uint8;
   typedef uint32_t uint32;
+  typedef int8_t int8;
 
   typedef std::shared_ptr<Voxelgrid> Ptr;
   typedef std::shared_ptr<const Voxelgrid> ConstPtr;
@@ -41,7 +42,10 @@ class Voxelgrid
   // LOAD/SAVE/CONVERSIONS
   static Ptr Load2DOpenCV(const std::string & filename);
   static Ptr Load3DOctomap(const std::string & filename);
+  static Ptr Load3DOctomapWithISize(const std::string & filename,
+                                    const Eigen::Vector3i & isize);
   bool Save2D3D(const std::string & filename_prefix, const bool is_3d) const;
+  bool Save2D3DR(const std::string & filename_prefix, const bool is_3d, const float resolution) const;
 
   cv::Mat ToOpenCVImage2D() const;
   static Ptr FromOpenCVImage2DUint8(const cv::Mat &image);
@@ -49,8 +53,11 @@ class Voxelgrid
   bool SaveOpenCVImage2D(const std::string & filename) const;
 
   std::shared_ptr<octomap::OcTree> ToOctomapOctree() const;
+  std::shared_ptr<octomap::OcTree> ToOctomapOctree(const float resolution) const;
   static Ptr FromOctomapOctree(octomap::OcTree & octree);
+  static Ptr FromOctomapOctree(octomap::OcTree & octree, const Eigen::Vector3i & isize);
   bool SaveOctomapOctree(const std::string & filename) const;
+  bool SaveOctomapOctree(const std::string & filename, const float resolution) const;
 
   std_msgs::Float32MultiArray ToFloat32MultiArray() const;
   static Ptr FromFloat32MultiArray(const std_msgs::Float32MultiArray & arr);
@@ -77,6 +84,8 @@ class Voxelgrid
   Voxelgrid::Ptr Resize(const Eigen::Vector2f & scale) const {return Resize(Eigen::Vector3f(scale.x(), scale.y(), 1.0f)); }
   Voxelgrid::Ptr Resize(const float & scale) const {return Resize(Eigen::Vector3f(scale, scale, scale)); }
 
+  Voxelgrid::Ptr HalveSize(const Eigen::Vector3i & iterations = Eigen::Vector3i::Ones()) const;
+
   // FILL
   void Fill(const float value);
   Voxelgrid::Ptr FilledWith(const float value) const;
@@ -99,6 +108,9 @@ class Voxelgrid
   Voxelgrid::Ptr ErodeRect(const Eigen::Vector3i & kernel_size) const;
   Voxelgrid::Ptr ErodeCross(const Eigen::Vector3i & kernel_size) const;
 
+  // THRESHOLD
+  Voxelgrid::Ptr Threshold(const float th, const float value_if_above, const float value_if_below) const;
+
   // SUBMATRIX
   // copies other in this, starting at origin
   void SetSubmatrix(const Eigen::Vector3i & origin, const Voxelgrid & other);
@@ -111,13 +123,14 @@ class Voxelgrid
   Voxelgrid::Ptr Clamped(const float min, const float max) const;
   void Clamp(const float min, const float max);
 
+  // arithmetics for scalars
   void Min(const float min);
   void Max(const float max);
-
-  // arithmetics for scalars
   void Add(const float value);
+  void Subtract(const float value) {Add(-value); }
   void Multiply(const float value);
 
+  // arithmetics
   void DivideBy(const Voxelgrid & other);
 
   void ToStream(std::ostream & ostr) const;
@@ -128,6 +141,9 @@ class Voxelgrid
   bool ToFile(const std::string & filename) const;
   bool ToFileBinary(const std::string & filename) const;
   static Ptr FromFileBinary(const std::string &filename);
+
+  bool ToFileTernaryBinary(const std::string & filename) const;
+  static Ptr FromFileTernaryBinary(const std::string &filename);
 
   // transpose/reflect
   Voxelgrid::Ptr Transpose(const uint64 axis0, const uint64 axis1, const uint64 axis2);

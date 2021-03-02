@@ -20,10 +20,9 @@
 #include <sstream>
 
 // custom
-#include "generate_test_dataset_opencl.h"
-#include "origin_visibility.h"
-#include "generate_test_dataset.h"
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/generate_test_dataset_opencl.h>
+#include <nbv_3d_cnn/origin_visibility.h>
+#include <nbv_3d_cnn/voxelgrid.h>
 
 class GenerateSingleImage
 {
@@ -56,12 +55,15 @@ class GenerateSingleImage
   }
 
   GenerateSingleImage(ros::NodeHandle & nh, GenerateTestDatasetOpenCL & opencl, const bool is_3d,
-                      const float sensor_range, const uint64 sensor_resolution_x,
+                      const float sensor_range,
+                      const float sensor_min_range,
+                      const uint64 sensor_resolution_x,
                       const uint64 sensor_resolution_y,
                       const float sensor_focal_length, const uint64 view_cube_resolution,
                       const uint64 submatrix_resolution);
 
   void Run(const Voxelgrid & environment, const Vector3fVector & origins, const QuaternionfVector & orientations,
+           const uint64 accuracy_skip_voxels,
            Voxelgrid &cumulative_empty_observation, Voxelgrid &cumulative_occupied_observation,
            Voxelgrid &cumulative_frontier_observation, Voxelgrid &view_cube_evaluation,
            Voxelgrid &directional_view_cube_evaluation, Voxelgrid &smooth_directional_view_cube_evaluation,
@@ -80,14 +82,15 @@ class GenerateSingleImage
   Vector3iVector SimulateView(const Voxelgrid & environment,
                               const Eigen::Vector3f & origin, const Eigen::Quaternionf &bearing,
                               const float sensor_f, const Eigen::Vector2i & sensor_resolution,
-                              const float max_range,
+                              const float max_range, const float min_range,
                               FloatVector & nearest_dist, Vector3fVector & ray_bearings);
 
   OriginVisibilityVector EvaluateMultiViewCubes(const Voxelgrid & environment,
                                                 const Voxelgrid & known_occupied,
                                                 const Voxelgrid & known_empty,
                                                 const Vector3fVector & origins,
-                                                const float max_range);
+                                                const float max_range,
+                                                const float min_range);
 
   OriginVisibilityVector InformationGainMultiViewCubes(const Voxelgrid & environment,
                                                        const Voxelgrid & known_occupied,
@@ -103,12 +106,14 @@ class GenerateSingleImage
                                const float sensor_f,
                                const Eigen::Vector2i &sensor_resolution,
                                const float max_range,
+                               const float min_range,
                                Voxelgrid &observed_surface);
 
   Voxelgrid::Ptr FillViewKnownUsingCubeResolution(const Voxelgrid & environment,
                                                   const Eigen::Vector3f & origin,
                                                   const Eigen::Quaternionf & bearing,
                                                   const float max_range,
+                                                  const float min_range,
                                                   Voxelgrid & observed_surface);
 
   Voxelgrid::Ptr FrontierFromObservedAndEmpty(const Voxelgrid & occupied_observed, const Voxelgrid & empty_observed) const;
@@ -125,6 +130,7 @@ class GenerateSingleImage
   ros::NodeHandle & m_nh;
 
   float m_sensor_range_voxels;
+  float m_sensor_min_range_voxels;
   uint64 m_sensor_resolution_x;
   uint64 m_sensor_resolution_y;
   float m_sensor_focal_length;

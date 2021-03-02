@@ -13,7 +13,7 @@
 // OpenCV
 #include <opencv2/core/core.hpp>
 
-#include "voxelgrid.h"
+#include <nbv_3d_cnn/voxelgrid.h>
 
 class GenerateTestDatasetOpenCL;
 

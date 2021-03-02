@@ -1,16 +1,21 @@
-#include "generate_single_image.h"
+#include <nbv_3d_cnn/generate_single_image.h>
+
+#include "generate_test_dataset.h"
 
 #define SQR(x) ((x)*(x))
 
 GenerateSingleImage::GenerateSingleImage(ros::NodeHandle & nh, GenerateTestDatasetOpenCL & opencl,
                                          const bool is_3d,
-                                         const float sensor_range, const uint64 sensor_resolution_x,
+                                         const float sensor_range,
+                                         const float sensor_min_range,
+                                         const uint64 sensor_resolution_x,
                                          const uint64 sensor_resolution_y,
                                          const float sensor_focal_length, const uint64 view_cube_resolution,
                                          const uint64 submatrix_resolution):
   m_nh(nh), m_opencl(opencl)
 {
   m_sensor_range_voxels = sensor_range;
+  m_sensor_min_range_voxels = sensor_min_range;
   m_sensor_focal_length = sensor_focal_length;
   m_sensor_resolution_x = sensor_resolution_x;
   m_sensor_resolution_y = sensor_resolution_y;
@@ -30,6 +35,7 @@ void GenerateSingleImage::GenerateTestSample(const Voxelgrid & environment, cons
   cumulative_occupied_observation = *environment.FilledWith(0.0);
 
   const float max_range = m_sensor_range_voxels;
+  const float min_range = 0.0;
 
   const uint64 num_poses = origins.size();
   for (uint64 i = 0; i < num_poses; i++)
@@ -43,7 +49,7 @@ void GenerateSingleImage::GenerateTestSample(const Voxelgrid & environment, cons
     Voxelgrid occupied_observed_by_this;
     const Voxelgrid empty_observed_by_this = *FillViewKnown(environment, origin, sensor_orientation,
                                                             m_sensor_focal_length,
-                                                            resolution, max_range,
+                                                            resolution, max_range, min_range,
                                                             occupied_observed_by_this);
 
     cumulative_empty_observation = *cumulative_empty_observation.Or(empty_observed_by_this);
@@ -136,6 +142,7 @@ void GenerateSingleImage::UpdateViewCubeEvaluationPixel(const Eigen::Vector3i & 
 
 void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVector & origins,
                               const QuaternionfVector &orientations,
+                              const uint64 accuracy_skip_voxels,
                               Voxelgrid & cumulative_empty_observation,
                               Voxelgrid & cumulative_occupied_observation,
                               Voxelgrid & cumulative_frontier_observation,
@@ -151,20 +158,26 @@ void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVecto
   const uint64 width = environment.GetWidth();
   const uint64 height = environment.GetHeight();
   const uint64 depth = environment.GetDepth();
+  const uint64 output_width = width / accuracy_skip_voxels;
+  const uint64 output_height = height / accuracy_skip_voxels;
+  const uint64 output_depth = depth / accuracy_skip_voxels;
   const Eigen::Vector3i size = environment.GetSize();
+  const Eigen::Vector3i output_size = size / accuracy_skip_voxels;
   const float max_range = m_sensor_range_voxels;
+  const float min_range = m_sensor_min_range_voxels;
 
-  view_cube_evaluation = *environment.FilledWith(0.0f);
+  view_cube_evaluation = Voxelgrid(output_size);
+  view_cube_evaluation.Fill(0.0f);
 
-  directional_scoreangle_evaluation = Voxelgrid4(width, height, depth);
+  directional_scoreangle_evaluation = Voxelgrid4(output_size);
   if (!m_is_3d)
     directional_scoreangle_evaluation.Fill(Eigen::Vector4f::UnitW()); // w is alpha
   else
     directional_scoreangle_evaluation.Fill(Eigen::Vector4f::Zero());
 
-  directional_view_cube_evaluation = Voxelgrid(size.x() * m_submatrix_resolution,
-                                               size.y() * m_submatrix_resolution,
-                                               size.z() * (m_is_3d ? m_submatrix_resolution : 1));
+  directional_view_cube_evaluation = Voxelgrid(output_size.x() * m_submatrix_resolution,
+                                               output_size.y() * m_submatrix_resolution,
+                                               output_size.z() * (m_is_3d ? m_submatrix_resolution : 1));
   directional_view_cube_evaluation.Fill(0.0f);
 
   if (!m_is_3d)
@@ -172,7 +185,8 @@ void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVecto
   else
   {
     const uint64 standard_orientations_size = OriginVisibility::GenerateStandardOrientationSet(8).size();
-    smooth_directional_view_cube_evaluation = Voxelgrid(size.x() * standard_orientations_size, size.y(), size.z());
+    smooth_directional_view_cube_evaluation = Voxelgrid(output_size.x() * standard_orientations_size,
+                                                        output_size.y(), output_size.z());
     smooth_directional_view_cube_evaluation.Fill(0.0f);
   }
 
@@ -183,12 +197,12 @@ void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVecto
   batch_origins.reserve(BATCH_SIZE);
   batch_coords.reserve(BATCH_SIZE);
   ROS_INFO("generate_test_dataset: evaluating view poses...");
-  for (uint64 z = 0; z < depth; z++)
+  for (uint64 z = 0; z < depth; z += accuracy_skip_voxels)
   {
-    for (uint64 y = 0; y < height; y++)
+    for (uint64 y = 0; y < height; y += accuracy_skip_voxels)
     {
       //ROS_INFO("generate_test_dataset: evaluating view poses 0-%u %u", unsigned(width - 1), unsigned(y));
-      for (uint64 x = 0; x < width; x++)
+      for (uint64 x = 0; x < width; x += accuracy_skip_voxels)
       {
         if (!cumulative_empty_observation.at(x, y, z))
           continue;
@@ -207,12 +221,18 @@ void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVecto
                      unsigned(x), unsigned(y), unsigned(z));
           else
             ROS_INFO("generate_test_dataset: processing batch at x,y = %u,%u", unsigned(x), unsigned(y));
+
           OriginVisibilityVector origin_visibility =
             EvaluateMultiViewCubes(environment, cumulative_occupied_observation, cumulative_empty_observation,
-                                   batch_origins, max_range);
-          ROS_INFO("generate_test_dataset: saving batch at x,y = %u,%u", unsigned(x), unsigned(y));
+                                   batch_origins, max_range, min_range);
+
+          if (m_is_3d)
+            ROS_INFO("generate_test_dataset: saving batch at x,y,z = %u,%u,%u", unsigned(x), unsigned(y), unsigned(z));
+          else
+            ROS_INFO("generate_test_dataset: saving batch at x,y = %u,%u", unsigned(x), unsigned(y));
+
           for (uint64 i = 0; i < batch_origins.size(); i++)
-            UpdateViewCubeEvaluationPixel(batch_coords[i], origin_visibility[i],
+            UpdateViewCubeEvaluationPixel(batch_coords[i] / int(accuracy_skip_voxels), origin_visibility[i],
                                           view_cube_evaluation, directional_view_cube_evaluation,
                                           smooth_directional_view_cube_evaluation,
                                           directional_scoreangle_evaluation);
@@ -229,10 +249,10 @@ void GenerateSingleImage::Run(const Voxelgrid & environment, const Vector3fVecto
     ROS_INFO("generate_test_dataset: processing last batch");
     OriginVisibilityVector origin_visibility =
       EvaluateMultiViewCubes(environment, cumulative_occupied_observation, cumulative_empty_observation,
-                             batch_origins, max_range);
+                             batch_origins, max_range, min_range);
     ROS_INFO("generate_test_dataset: saving last batch");
     for (uint64 i = 0; i < batch_origins.size(); i++)
-      UpdateViewCubeEvaluationPixel(batch_coords[i], origin_visibility[i],
+      UpdateViewCubeEvaluationPixel(batch_coords[i] / accuracy_skip_voxels, origin_visibility[i],
                                     view_cube_evaluation, directional_view_cube_evaluation,
                                     smooth_directional_view_cube_evaluation,
                                     directional_scoreangle_evaluation);
@@ -292,14 +312,14 @@ GenerateSingleImage::Vector3fVector GenerateSingleImage::GenerateCubeRayBearings
 GenerateSingleImage::Vector3iVector GenerateSingleImage::SimulateView(const Voxelgrid & environment,
                             const Eigen::Vector3f & origin, const Eigen::Quaternionf & bearing,
                             const float sensor_f, const Eigen::Vector2i & sensor_resolution,
-                            const float max_range,
+                            const float max_range, const float min_range,
                             FloatVector & nearest_dist, Vector3fVector & ray_bearings)
 {
   nearest_dist.assign(sensor_resolution.prod(), -1.0);
   Vector3iVector nearest_point(sensor_resolution.prod());
   ray_bearings = GenerateSensorRayBearings(bearing, sensor_f, sensor_resolution);
 
-  m_opencl.SimulateView(environment, origin, ray_bearings, max_range,
+  m_opencl.SimulateView(environment, origin, ray_bearings, max_range, min_range,
                         nearest_dist, nearest_point);
 
   return nearest_point;
@@ -309,7 +329,8 @@ OriginVisibilityVector GenerateSingleImage::EvaluateMultiViewCubes(const Voxelgr
                                                                    const Voxelgrid & known_occupied,
                                                                    const Voxelgrid & known_empty,
                                                                    const Vector3fVector & origins,
-                                                                   const float max_range)
+                                                                   const float max_range,
+                                                                   const float min_range)
 {
   OriginVisibilityVector result;
   for (const Eigen::Vector3f & origin : origins)
@@ -339,7 +360,7 @@ OriginVisibilityVector GenerateSingleImage::EvaluateMultiViewCubes(const Voxelgr
 
   FloatVector nearest_dist;
   Vector3iVector observed_points;
-  m_opencl.SimulateMultiRayWI(environment, all_origins, all_bearings, max_range, nearest_dist, observed_points);
+  m_opencl.SimulateMultiRayWI(environment, all_origins, all_bearings, max_range, min_range, nearest_dist, observed_points);
 
   for (uint64 ov_i = 0; ov_i < result.size(); ov_i++)
   { 
@@ -454,7 +475,7 @@ OriginVisibilityVector GenerateSingleImage::InformationGainMultiViewCubes(const 
 Voxelgrid::Ptr GenerateSingleImage::FillViewKnownUsingCubeResolution(const Voxelgrid & environment,
                                                                      const Eigen::Vector3f & origin,
                                                                      const Eigen::Quaternionf & bearing,
-                                                                     const float max_range,
+                                                                     const float max_range, const float min_range,
                                                                      Voxelgrid & observed_surface)
 {
   observed_surface = *environment.FilledWith(0.0f);
@@ -468,7 +489,7 @@ Voxelgrid::Ptr GenerateSingleImage::FillViewKnownUsingCubeResolution(const Voxel
 
   FloatVector nearest_dist;
   Vector3iVector observed_points;
-  m_opencl.SimulateMultiRayWI(environment, origins, cube_bearings, max_range, nearest_dist, observed_points);
+  m_opencl.SimulateMultiRayWI(environment, origins, cube_bearings, max_range, min_range, nearest_dist, observed_points);
 
   const float hfov_x = std::atan2(float(m_sensor_resolution_x) / 2.0f, float(m_sensor_focal_length));
   const float hfov_y = std::atan2(float(m_sensor_resolution_y) / 2.0f, float(m_sensor_focal_length));
@@ -494,7 +515,7 @@ Voxelgrid::Ptr GenerateSingleImage::FillViewKnownUsingCubeResolution(const Voxel
 Voxelgrid::Ptr GenerateSingleImage::FillViewKnown(const Voxelgrid & environment, const Eigen::Vector3f & origin,
                                                   const Eigen::Quaternionf & bearing,
                                                   const float sensor_f, const Eigen::Vector2i & sensor_resolution,
-                                                  const float max_range,
+                                                  const float max_range, const float min_range,
                                                   Voxelgrid & observed_surface)
 {
   Voxelgrid::Ptr result_ptr = environment.FilledWith(0.0f);
@@ -504,7 +525,7 @@ Voxelgrid::Ptr GenerateSingleImage::FillViewKnown(const Voxelgrid & environment,
   FloatVector nearest_dist(sensor_resolution.prod(), NAN);
   Vector3fVector ray_bearings(sensor_resolution.prod());
   const Vector3iVector nearest = SimulateView(environment, origin, bearing,
-                                              sensor_f, sensor_resolution, max_range,
+                                              sensor_f, sensor_resolution, max_range, min_range,
                                               nearest_dist, ray_bearings);
 
   for (uint64 i = 0; i < nearest.size(); i++)

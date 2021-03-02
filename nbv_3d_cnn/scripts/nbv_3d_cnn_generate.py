@@ -31,6 +31,13 @@ tensorboard_directory = rospy.get_param('~tensorboard_directory', '')
 
 sensor_range_voxels = rospy.get_param('~sensor_range_voxels', 150)
 
+training_dataset_first_element = rospy.get_param('~training_dataset_first_element', 0)
+training_dataset_last_element = rospy.get_param('~training_dataset_last_element', 120)
+validation_dataset_first_element = rospy.get_param('~validation_dataset_first_element', 120)
+validation_dataset_last_element = rospy.get_param('~validation_dataset_first_element', 180)
+
+log_accuracy_skip_voxels = rospy.get_param('~log_accuracy_skip_voxels', 0)
+
 num_epochs = rospy.get_param('~num_epochs', 300)
 
 load_checkpoint = rospy.get_param('~load_checkpoint', '')
@@ -40,6 +47,8 @@ evaluation_only = rospy.get_param('~evaluation_only', False)
 model_type = rospy.get_param('~model_type', '')
 
 is_3d = rospy.get_param('~is_3d', False)
+is_3d_realistic = rospy.get_param('~is_3d_realistic', False)
+is_3d = (is_3d or is_3d_realistic)
 if_3d_3d_str = ('_3d' if is_3d else '')
 
 sub_image_expand_pow = rospy.get_param('~sub_image_expand_pow', 2)
@@ -62,25 +71,37 @@ if (model_type == '' or model_type == '2'):
     dataset_mode = 'smooth_directional'
   else:
     dataset_mode = 'directional'
-  dataset_augmentation = ['rotation', ]
+  if (not is_3d_realistic):
+    dataset_augmentation = ['rotation', ]
+  else:
+    dataset_augmentation = ['rotation4', ]
 elif (model_type == 'flat'):
   dataset_mode = 'smooth_directional'
   if not is_3d:
     dataset_augmentation = ['rotation', ]
   if is_3d:
-    batch_size = 2
-    dataset_augmentation = ['files8', ]
+    if not is_3d_realistic:
+      batch_size = 2
+      dataset_augmentation = ['files8', ]
+    else:
+      dataset_augmentation = ['files4', ]
 elif (model_type == 'quat'):
   dataset_mode = 'quat'
   if not is_3d:
     dataset_augmentation = ['rotation', 'rotate_channels']
   if is_3d:
-    batch_size = 5
-    dataset_augmentation = ['files8', ]
+    if not is_3d_realistic:
+      batch_size = 5
+      dataset_augmentation = ['files8', ]
+    else:
+      dataset_augmentation = ['files4', ]
 elif (model_type == 'autocomplete'):
   dataset_mode = 'autocomplete'
   if not is_3d:
     dataset_augmentation = ['rotation', ]
+  else:
+    if is_3d_realistic:
+      dataset_augmentation = ['rotation4', ]
 elif (model_type == 'circular'):
   if not is_3d:
     dataset_mode = 'smooth_directional'
@@ -92,15 +113,19 @@ else:
 
 if not is_3d:
   dataset, image_width, image_height, y_image_width, y_image_height = (
-    inria_dataset.get_inria_dataset(source_file_name_prefix, 0, 120, dataset_mode, dataset_augmentation))
+    inria_dataset.get_inria_dataset(source_file_name_prefix, training_dataset_first_element, training_dataset_last_element,
+    dataset_mode, dataset_augmentation))
   val_dataset, val_image_width, val_image_height, val_y_image_width, val_y_image_height = (
-    inria_dataset.get_inria_dataset(source_file_name_prefix, 120, 180, dataset_mode, dataset_augmentation))
+    inria_dataset.get_inria_dataset(source_file_name_prefix, validation_dataset_first_element, validation_dataset_last_element,
+    dataset_mode, dataset_augmentation))
   pass
 else:
   dataset, image_width, image_height, image_depth, y_image_width, y_image_height, y_image_depth = (
-    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, 0, 120, dataset_mode, dataset_augmentation))
+    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, training_dataset_first_element,
+    training_dataset_last_element, dataset_mode, dataset_augmentation))
   val_dataset, val_image_width, val_image_height, val_image_depth, val_y_image_width, val_y_image_height, val_y_image_depth = (
-    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, 120, 180, dataset_mode, dataset_augmentation))
+    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, validation_dataset_first_element,
+    validation_dataset_last_element, dataset_mode, dataset_augmentation))
   pass
 
 dataset.batch(batch_size)
@@ -116,15 +141,15 @@ if (model_type == '' or model_type == '2'):
   if not is_3d:
     model = nbv_2d_model.get_2d_model(sensor_range_voxels, input_shape, sub_image_expand_pow)
   else:
-    model = nbv_3d_model.get_3d_model(sensor_range_voxels, input_shape, sub_image_expand_pow)
+    model = nbv_3d_model.get_3d_model(sensor_range_voxels, input_shape, sub_image_expand_pow, log_accuracy_skip_voxels)
   model_file_prefix = model_type
   output_channels = 1
 elif (model_type == 'flat'):
   if not is_3d:
-    model = nbv_2d_model.get_flat_2d_model(sensor_range_voxels, input_shape, sub_image_expand_pow)
+    model = nbv_2d_model.get_flat_2d_model(sensor_range_voxels, input_shape, sub_image_expand_pow, log_accuracy_skip_voxels)
     output_channels = 1
   else:
-    model = nbv_3d_model.get_flat_3d_model(sensor_range_voxels, input_shape, 52)
+    model = nbv_3d_model.get_flat_3d_model(sensor_range_voxels, input_shape, 52, log_accuracy_skip_voxels)
     output_channels = 52
   model_file_prefix = 'flat'
   sub_image_expand_pow = 0
@@ -134,7 +159,7 @@ elif (model_type == 'quat'):
     model = nbv_2d_model.get_quat_2d_model(sensor_range_voxels, input_shape)
     output_channels = 2
   else:
-    model = nbv_3d_model.get_quat_3d_model(sensor_range_voxels, input_shape)
+    model = nbv_3d_model.get_quat_3d_model(sensor_range_voxels, input_shape, log_accuracy_skip_voxels)
     output_channels = 4
   model_file_prefix = 'scoreangle'
   sub_image_expand_pow = 0
@@ -203,9 +228,11 @@ rospy.loginfo('nbv_3d_cnn: predicting and saving images...')
 counter = 0
 if is_3d:
   dataset, image_width, image_height, image_depth, y_image_width, y_image_height, y_image_depth = (
-    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, 0, 120, dataset_mode, final_val_dataset_augmentation))
+    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, training_dataset_first_element,
+    training_dataset_last_element, dataset_mode, final_val_dataset_augmentation))
   val_dataset, val_image_width, val_image_height, val_image_depth, val_y_image_width, val_y_image_height, val_y_image_depth = (
-    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, 120, 180, dataset_mode, final_val_dataset_augmentation))
+    scene_3d_dataset.get_scene_3d_dataset(source_file_name_prefix, validation_dataset_first_element,
+    validation_dataset_last_element, dataset_mode, final_val_dataset_augmentation))
   pass
 
 for i,x in enumerate(dataset.concatenate(val_dataset)):

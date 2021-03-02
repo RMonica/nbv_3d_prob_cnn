@@ -72,11 +72,17 @@ def get_scene_3d_dataset_next_kernel(source_file_name_prefix, x_empty_prefix,
     for b in range(0, 2):
       for c in range(0, 4):
         rotations.append([0, b, c])
+  if ('rotation4' in enable_augmentation):
+    rotations = []
+    for c in range(0, 4):
+      rotations.append([c, 0, 0])
 
   sub_files = 0
   sub_files_counter = 0
   if ('files8' in enable_augmentation):
     sub_files = 8
+  if ('files4' in enable_augmentation):
+    sub_files = 4
 
   while (image_load_ok):
     sub_file_suffix = ""
@@ -110,9 +116,9 @@ def get_scene_3d_dataset_next_kernel(source_file_name_prefix, x_empty_prefix,
         frontier = np.rot90(np.array(frontier), k=rotation[1], axes=(0, 2))
         gt = np.rot90(np.array(gt), k=rotation[1], axes=(0, 2))
 
-        empty = np.rot90(np.array(empty), k=rotation[0], axes=(0, 1))
-        frontier = np.rot90(np.array(frontier), k=rotation[0], axes=(0, 1))
-        gt = np.rot90(np.array(gt), k=rotation[0], axes=(0, 1))
+        empty = np.rot90(np.array(empty), k=rotation[0], axes=(1, 2))
+        frontier = np.rot90(np.array(frontier), k=rotation[0], axes=(1, 2))
+        gt = np.rot90(np.array(gt), k=rotation[0], axes=(1, 2))
 
         x = [empty, frontier]
         x = np.transpose(x, [1, 2, 3, 0])

@@ -1,4 +1,4 @@
-#include "origin_visibility.h"
+#include <nbv_3d_cnn/origin_visibility.h>
 
 OriginVisibility::OriginVisibility(const Eigen::Vector3f & p_pos, const uint64 res,
                                    const bool p_is_3d)
@@ -492,6 +492,8 @@ OriginVisibility OriginVisibility::SmoothByHFOV3D(const Eigen::Vector2f & hfov) 
 
     result.IntegrateObservation(bearing, OBSTYPE_EMPTY, miss);
     result.IntegrateObservation(bearing, OBSTYPE_UNKNOWN, hits);
+    
+    return true;
   });
 
   return result;
