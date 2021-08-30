@@ -19,6 +19,18 @@ Results have been published in the article:
 
 - R. Monica, J. Aleotti, _A Probabilistic Next Best View Planner for Depth Cameras based on Deep Learning_, IEEE Robotics and Automation Letters, 2021
 
+The methods above correspond to the methods presented in the article as follows:
+
+- **Random**: _Random_.
+- **CNNDirectional**: _D-City-CNN_.
+- **CNNFlat**: _Flat City-CNN_.
+- **CNNQuat**: _B-City-CNN_.
+- **InformationGain**: _Information Gain_.
+- **InformationGainProb**: _Probabilistic Information Gain_.
+- **AutocompleteIGain**: _CNN Probabilistic_ (proposed approach).
+- **AutocompleteFixedNumberIGain**: _CNN Probabilistic Downsampled_.
+- **OmniscientGain**: _Omniscient (oracle)_.
+
 Build
 -----
 
@@ -33,6 +45,13 @@ System dependencies:
 - Point Cloud Library
 - OpenCL
 - Tensorflow
+
+**Note**: by default, ROS compiles without optimizations and produces a very slow executable. If you haven't already, please activate optimizations. Example commands:
+
+```
+  catkin_make -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  catkin build --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+```
 
 Usage
 -----
@@ -100,4 +119,4 @@ These parameters may be set for the `simulate_nbv_cycle` node into `simulate_nbv
 
 - Launch `simulate_nbv_cycle_3d_realistic.launch`. Statistics are saved to `data/logs_3d_realistic`. Debug output is saved to `data/simulate_nbv_cycle_3d_realistic`.
 
-2021-03-02
+2021-08-30
