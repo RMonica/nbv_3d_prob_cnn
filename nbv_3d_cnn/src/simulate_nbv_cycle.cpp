@@ -28,7 +28,7 @@
 #include <nbv_3d_cnn/generate_single_image.h>
 #include <nbv_3d_cnn/simulate_nbv_cycle_adapter.h>
 #include <nbv_3d_cnn/voxelgrid.h>
-#include <nbv_3d_cnn/PredictAction.h>
+#include <nbv_3d_cnn_msgs/PredictAction.h>
 #include "generate_test_dataset.h"
 
 class SimulateNBVCycle
@@ -41,7 +41,7 @@ class SimulateNBVCycle
   typedef uint8_t uint8;
   typedef uint64_t uint64;
 
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::PredictAction> PredictActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::PredictAction> PredictActionClient;
   typedef std::shared_ptr<PredictActionClient> PredictActionClientPtr;
 
   SimulateNBVCycle(ros::NodeHandle & nh):

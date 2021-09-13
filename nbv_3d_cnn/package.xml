@@ -22,6 +22,7 @@
   <depend>visualization_msgs</depend>
   <depend>eigen_conversions</depend>
   <depend>std_msgs</depend>
+  <depend>nbv_3d_cnn_msgs</depend>
 
   <export>
 

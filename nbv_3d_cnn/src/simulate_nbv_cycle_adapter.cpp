@@ -71,7 +71,7 @@ bool RandomNBVAdapter::GetNextBestView(const Voxelgrid & environment,
   return true;
 }
 
-void CNNDirectionalNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data)
+void CNNDirectionalNBVAdapter::onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data)
 {
   m_raw_data = raw_data;
   ROS_INFO("CNNOriginVisibilityNBVAdapter: got raw data.");
@@ -124,7 +124,7 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
                                                  Eigen::Quaternionf & orientation,
                                                  ViewWithScoreVector * const all_views_with_scores)
 {
-  nbv_3d_cnn::Predict3dGoal goal;
+  nbv_3d_cnn_msgs::Predict3dGoal goal;
   goal.frontier = frontier.ToFloat32MultiArray();
   goal.empty = empty.ToFloat32MultiArray();
 
@@ -141,7 +141,7 @@ bool CNNDirectionalNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
   }
 
   ROS_INFO("simulate_nbv_cycle: got result.");
-  nbv_3d_cnn::Predict3dResult result = *(m_predict_3d_action_client->getResult());
+  nbv_3d_cnn_msgs::Predict3dResult result = *(m_predict_3d_action_client->getResult());
   if (result.scores.data.empty())
   {
     ROS_INFO("simulate_nbv_cycle: waiting for raw data.");
@@ -277,7 +277,7 @@ bool CNNDirectionalNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
   const uint64 width = empty.GetWidth();
   const uint64 height = empty.GetHeight();
 
-  nbv_3d_cnn::PredictGoal goal;
+  nbv_3d_cnn_msgs::PredictGoal goal;
 
   {
     cv_bridge::CvImagePtr cv_ptr(new cv_bridge::CvImage);
@@ -301,7 +301,7 @@ bool CNNDirectionalNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
   }
 
   ROS_INFO("simulate_nbv_cycle: got result.");
-  const nbv_3d_cnn::PredictResult result = *(m_predict_action_client->getResult());
+  const nbv_3d_cnn_msgs::PredictResult result = *(m_predict_action_client->getResult());
 
   const sensor_msgs::Image & scores_msg = result.scores;
 
@@ -379,7 +379,7 @@ bool CNNDirectionalNBVAdapter::GetNextBestView(const Voxelgrid & environment,
                              all_views_with_scores);
 }
 
-void CNNQuatNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data)
+void CNNQuatNBVAdapter::onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data)
 {
   m_raw_data = raw_data;
   ROS_INFO("CNNScoreAngleNBVAdapter: got raw data.");
@@ -424,7 +424,7 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
                                           Eigen::Quaternionf &orientation,
                                           ViewWithScoreVector * const all_views_with_scores)
 {
-  nbv_3d_cnn::Predict3dGoal goal;
+  nbv_3d_cnn_msgs::Predict3dGoal goal;
 
   goal.empty = empty.ToFloat32MultiArray();
   goal.frontier = frontier.ToFloat32MultiArray();
@@ -442,7 +442,7 @@ bool CNNQuatNBVAdapter::GetNextBestView3d(const Voxelgrid & environment,
   }
 
   ROS_INFO("simulate_nbv_cycle: got result.");
-  nbv_3d_cnn::Predict3dResult result = *(m_predict_3d_action_client->getResult());
+  nbv_3d_cnn_msgs::Predict3dResult result = *(m_predict_3d_action_client->getResult());
   if (result.scores.data.empty())
   {
     ROS_INFO("simulate_nbv_cycle: waiting for raw data.");
@@ -546,7 +546,7 @@ bool CNNQuatNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
   const uint64 width = empty.GetWidth();
   const uint64 height = empty.GetHeight();
 
-  nbv_3d_cnn::PredictGoal goal;
+  nbv_3d_cnn_msgs::PredictGoal goal;
 
   {
     cv_bridge::CvImagePtr cv_ptr(new cv_bridge::CvImage);
@@ -570,7 +570,7 @@ bool CNNQuatNBVAdapter::GetNextBestView2d(const Voxelgrid & environment,
   }
 
   ROS_INFO("simulate_nbv_cycle: got result.");
-  const nbv_3d_cnn::PredictResult result = *(m_predict_action_client->getResult());
+  const nbv_3d_cnn_msgs::PredictResult result = *(m_predict_action_client->getResult());
 
   const sensor_msgs::Image & scores_msg = result.scores;
 
@@ -988,7 +988,7 @@ cv::Mat InformationGainNBVAdapter::GetDebugImage(const Voxelgrid & environment) 
   return cv_color_leo;
 }
 
-void AutocompleteIGainNBVAdapter::onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data)
+void AutocompleteIGainNBVAdapter::onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data)
 {
   m_raw_data = raw_data;
   ROS_INFO("AutocompleteIGainNBVAdapter: got raw data.");
@@ -1044,7 +1044,7 @@ AutocompleteIGainNBVAdapter::AutocompleteIGainNBVAdapter(ros::NodeHandle & nh,
 
 bool AutocompleteIGainNBVAdapter::Predict3d(const Voxelgrid &empty, const Voxelgrid &frontier, Voxelgrid &autocompleted)
 {
-  nbv_3d_cnn::Predict3dGoal goal;
+  nbv_3d_cnn_msgs::Predict3dGoal goal;
 
   goal.empty = empty.ToFloat32MultiArray();
   goal.frontier = frontier.ToFloat32MultiArray();
@@ -1062,7 +1062,7 @@ bool AutocompleteIGainNBVAdapter::Predict3d(const Voxelgrid &empty, const Voxelg
     return false;
   }
 
-  nbv_3d_cnn::Predict3dResult result = *(m_predict3d_action_client->getResult());
+  nbv_3d_cnn_msgs::Predict3dResult result = *(m_predict3d_action_client->getResult());
   if (result.scores.data.empty())
   {
     ROS_INFO("simulate_nbv_cycle: waiting for raw data.");
@@ -1089,7 +1089,7 @@ bool AutocompleteIGainNBVAdapter::Predict3d(const Voxelgrid &empty, const Voxelg
 
 bool AutocompleteIGainNBVAdapter::Predict(const Voxelgrid & empty, const Voxelgrid & frontier, Voxelgrid & autocompleted)
 {
-  nbv_3d_cnn::PredictGoal goal;
+  nbv_3d_cnn_msgs::PredictGoal goal;
 
   {
     cv_bridge::CvImagePtr cv_ptr(new cv_bridge::CvImage);
@@ -1114,7 +1114,7 @@ bool AutocompleteIGainNBVAdapter::Predict(const Voxelgrid & empty, const Voxelgr
   }
 
   ROS_INFO("simulate_nbv_cycle: AutocompleteIGainNBVAdapter: got result.");
-  const nbv_3d_cnn::PredictResult result = *(m_predict_action_client->getResult());
+  const nbv_3d_cnn_msgs::PredictResult result = *(m_predict_action_client->getResult());
 
   const sensor_msgs::Image & autocompleted_msg = result.scores;
 

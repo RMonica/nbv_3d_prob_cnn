@@ -34,7 +34,7 @@ sensor_range_voxels = rospy.get_param('~sensor_range_voxels', 150)
 training_dataset_first_element = rospy.get_param('~training_dataset_first_element', 0)
 training_dataset_last_element = rospy.get_param('~training_dataset_last_element', 120)
 validation_dataset_first_element = rospy.get_param('~validation_dataset_first_element', 120)
-validation_dataset_last_element = rospy.get_param('~validation_dataset_first_element', 180)
+validation_dataset_last_element = rospy.get_param('~validation_dataset_last_element', 180)
 
 log_accuracy_skip_voxels = rospy.get_param('~log_accuracy_skip_voxels', 0)
 

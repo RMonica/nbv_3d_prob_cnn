@@ -22,9 +22,9 @@
 #include <sstream>
 #include <memory>
 
-#include <nbv_3d_cnn/PredictAction.h>
-#include <nbv_3d_cnn/Predict3dAction.h>
-#include <nbv_3d_cnn/Floats.h>
+#include <nbv_3d_cnn_msgs/PredictAction.h>
+#include <nbv_3d_cnn_msgs/Predict3dAction.h>
+#include <nbv_3d_cnn_msgs/Floats.h>
 #include <nbv_3d_cnn/generate_single_image.h>
 
 struct ViewWithScore
@@ -99,9 +99,9 @@ class RandomNBVAdapter: public INBVAdapter
 class CNNDirectionalNBVAdapter: public INBVAdapter
 {
   public:
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::PredictAction> PredictActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::PredictAction> PredictActionClient;
   typedef std::shared_ptr<PredictActionClient> PredictActionClientPtr;
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::Predict3dAction> Predict3dActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::Predict3dAction> Predict3dActionClient;
   typedef std::shared_ptr<Predict3dActionClient> Predict3dActionClientPtr;
 
 
@@ -157,7 +157,7 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
   private:
-  void onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data);
+  void onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data);
 
   ros::NodeHandle & m_nh;
 
@@ -165,7 +165,7 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
   Predict3dActionClientPtr m_predict_3d_action_client;
 
   ros::Subscriber m_raw_data_subscriber;
-  nbv_3d_cnn::FloatsConstPtr m_raw_data;
+  nbv_3d_cnn_msgs::FloatsConstPtr m_raw_data;
   ros::CallbackQueue m_raw_data_callback_queue;
   ros::NodeHandle m_private_nh;
 
@@ -184,9 +184,9 @@ class CNNDirectionalNBVAdapter: public INBVAdapter
 class CNNQuatNBVAdapter: public INBVAdapter
 {
   public:
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::PredictAction> PredictActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::PredictAction> PredictActionClient;
   typedef std::shared_ptr<PredictActionClient> PredictActionClientPtr;
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::Predict3dAction> Predict3dActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::Predict3dAction> Predict3dActionClient;
   typedef std::shared_ptr<Predict3dActionClient> Predict3dActionClientPtr;
 
   explicit CNNQuatNBVAdapter(ros::NodeHandle & nh, const bool is_3d,
@@ -229,7 +229,7 @@ class CNNQuatNBVAdapter: public INBVAdapter
   Voxelgrid4 GetColorScores() const override {return m_last_scores; }
 
   private:
-  void onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data);
+  void onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data);
 
   ros::NodeHandle & m_nh;
 
@@ -242,7 +242,7 @@ class CNNQuatNBVAdapter: public INBVAdapter
   Predict3dActionClientPtr m_predict_3d_action_client;
 
   ros::Subscriber m_raw_data_subscriber;
-  nbv_3d_cnn::FloatsConstPtr m_raw_data;
+  nbv_3d_cnn_msgs::FloatsConstPtr m_raw_data;
   ros::CallbackQueue m_raw_data_callback_queue;
   ros::NodeHandle m_private_nh;
 
@@ -361,10 +361,10 @@ class AutocompleteIGainNBVAdapter: public INBVAdapter
   typedef std::vector<Eigen::Vector2f, Eigen::aligned_allocator<Eigen::Vector2f> > Vector2fVector;
   typedef std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i> > Vector2iVector;
 
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::PredictAction> PredictActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::PredictAction> PredictActionClient;
   typedef std::shared_ptr<PredictActionClient> PredictActionClientPtr;
 
-  typedef actionlib::SimpleActionClient<nbv_3d_cnn::Predict3dAction> Predict3dActionClient;
+  typedef actionlib::SimpleActionClient<nbv_3d_cnn_msgs::Predict3dAction> Predict3dActionClient;
   typedef std::shared_ptr<Predict3dActionClient> Predict3dActionClientPtr;
 
   explicit AutocompleteIGainNBVAdapter(ros::NodeHandle & nh,
@@ -406,7 +406,7 @@ class AutocompleteIGainNBVAdapter: public INBVAdapter
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 
   private:
-  void onRawData(const nbv_3d_cnn::FloatsConstPtr raw_data);
+  void onRawData(const nbv_3d_cnn_msgs::FloatsConstPtr raw_data);
 
   ros::NodeHandle & m_nh;
 
@@ -418,7 +418,7 @@ class AutocompleteIGainNBVAdapter: public INBVAdapter
   Predict3dActionClientPtr m_predict3d_action_client;
 
   ros::Subscriber m_raw_data_subscriber;
-  nbv_3d_cnn::FloatsConstPtr m_raw_data;
+  nbv_3d_cnn_msgs::FloatsConstPtr m_raw_data;
   ros::CallbackQueue m_raw_data_callback_queue;
   ros::NodeHandle m_private_nh;
 

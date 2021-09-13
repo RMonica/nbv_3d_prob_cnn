@@ -2,10 +2,10 @@
 
 import nbv_2d_model
 import nbv_3d_model
-import nbv_3d_cnn.msg as nbv_3d_cnn_msgs
+import nbv_3d_cnn_msgs.msg as nbv_3d_cnn_msgs
 import std_msgs.msg as std_msgs
 from rospy.numpy_msg import numpy_msg
-import nbv_3d_cnn.msg as nbv_3d_cnn_msgs
+import nbv_3d_cnn_msgs.msg as nbv_3d_cnn_msgs
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -272,14 +272,18 @@ class PredictAction(object):
 
 rospy.init_node('nbv_3d_cnn_predict', anonymous=True)
 
-# enable GPU memory growth
+max_memory_mb = rospy.get_param('~max_memory_mb', 3072)
+# limit GPU memory
 gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
+for gpu in gpus:
   try:
-    for gpu in gpus:
-      tf.config.experimental.set_memory_growth(gpu, True)
+    tf.config.experimental.set_virtual_device_configuration(
+      gpu, [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=max_memory_mb)])
+    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
   except RuntimeError as e:
+    print("Exception while limiting GPU memory:")
     print(e)
+    exit()
 
 server = PredictAction()
 rospy.spin()

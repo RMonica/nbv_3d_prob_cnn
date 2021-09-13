@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   actionlib
   sensor_msgs
+  nbv_3d_cnn_msgs
   actionlib_msgs
   visualization_msgs
   eigen_conversions
@@ -35,32 +36,6 @@ add_definitions(-Wno-ignored-attributes)
 ## Declare ROS messages, services and actions ##
 ################################################
 
-## Generate messages in the 'msg' folder
- add_message_files(
-   FILES
-   Floats.msg
- )
-
-## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
-
-add_action_files(
-  FILES
-  Predict.action
-  Predict3d.action
-)
-
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-  sensor_msgs
-  actionlib_msgs
-)
-
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
 ################################################
@@ -71,7 +46,7 @@ generate_messages(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES nbv_3d_cnn_voxelgrid
-  CATKIN_DEPENDS roscpp std_msgs
+  CATKIN_DEPENDS roscpp std_msgs nbv_3d_cnn_msgs
   DEPENDS Eigen3 OpenCV octomap
 )
 
