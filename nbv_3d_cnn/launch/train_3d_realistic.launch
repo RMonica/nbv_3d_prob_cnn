@@ -16,7 +16,7 @@
     <param name="validation_dataset_first_element" type="int" value="120" />
     <param name="validation_dataset_last_element" type="int" value="180" />
 
-    <!--<param name="log_accuracy_skip_voxels" type="int" value="2" />-->
+    <param name="log_accuracy_skip_voxels" type="int" value="3" />
 
     <!--<param name="load_checkpoint" type="string" value="_final.chkpt" />-->
     <!--<param name="load_checkpoint" type="string" value="scoreangle_3d_final.chkpt" />-->
